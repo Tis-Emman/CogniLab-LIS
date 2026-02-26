@@ -68,12 +68,12 @@ export default function Sidebar() {
           <div className="flex items-center justify-between">
             <div className={`flex items-center gap-3 ${!isOpen && 'justify-center w-full'}`}>
             <div className="w-10 h-10 bg-[#CBDED3] rounded-lg flex items-center justify-center text-[#3B6255] font-bold">
-                L
+                C
               </div>
               {isOpen && (
                 <div>
                   <h1 className="font-bold text-sm">CogniLab</h1>
-                  <p className="text-xs text-[#CBDED3]">System</p>
+                  <p className="text-xs text-[#CBDED3]">Laboratory</p>
                 </div>
               )}
             </div>

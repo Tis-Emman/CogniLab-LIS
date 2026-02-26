@@ -122,7 +122,10 @@ export default function TestResultsPage() {
       setUpdatingStatusId(resultId);
       const nextStatus = statusFlow[currentIndex + 1];
       await updateTestResult(resultId, { status: nextStatus });
-      await loadResults();
+      
+      // Update state optimistically without reloading
+      setResults(results.map(r => r.id === resultId ? { ...r, status: nextStatus as TestResult['status'] } : r));
+      
       setUpdatingStatusId(null);
     }
   };
