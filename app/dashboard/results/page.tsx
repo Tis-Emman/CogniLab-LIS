@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, CheckCircle, Clock, AlertCircle, ArrowRight, Edit2, Loader } from 'lucide-react';
-import { fetchTestResults, addTestResult, updateTestResult, deleteTestResult, logActivity } from '@/lib/database';
+import { fetchTestResults, addTestResult, updateTestResult, deleteTestResult } from '@/lib/database';
+import { MOCK_PATIENTS } from '@/lib/mockData';
 
 interface TestResult {
   id: string;
@@ -12,7 +13,7 @@ interface TestResult {
   result_value: string;
   reference_range: string;
   unit: string;
-  status: 'pending' | 'released';
+  status: 'pending' | 'encoding' | 'for_verification' | 'approved' | 'released';
   date_created: string;
 }
 
@@ -30,49 +31,9 @@ const LAB_SECTIONS = [
 
 const TESTS_BY_SECTION: Record<string, { name: string; referenceRange: string; unit: string }[]> =
   {
-    'BLOOD BANK': [
-      { name: 'Blood Type', referenceRange: 'ABO/RH', unit: 'Type' },
-      { name: 'Crossmatch', referenceRange: 'Compatible', unit: 'Result' },
-    ],
-    'ISBB': [
-      { name: 'Antibody Screening', referenceRange: 'Negative', unit: 'Result' },
-      { name: 'Direct Coombs Test', referenceRange: 'Negative', unit: 'Result' },
-    ],
-    'HEMATOLOGY': [
-      { name: 'Complete Blood Count (CBC)', referenceRange: 'Normal Range', unit: 'K/uL' },
-      { name: 'Hemoglobin', referenceRange: '12-16 g/dL', unit: 'g/dL' },
-      { name: 'Hematocrit', referenceRange: '36-46%', unit: '%' },
-      { name: 'White Blood Cells', referenceRange: '4.5-11 K/uL', unit: 'K/uL' },
-      { name: 'Platelets', referenceRange: '150-400 K/uL', unit: 'K/uL' },
-    ],
     'CLINICAL CHEMISTRY': [
-      { name: 'Random Blood Sugar (Glucose)', referenceRange: '< 140 mg/dL', unit: 'mg/dL' },
-      { name: 'Blood Cholesterol', referenceRange: '< 200 mg/dL', unit: 'mg/dL' },
-      { name: 'Blood Urea Nitrogen (BUN)', referenceRange: '7-20 mg/dL', unit: 'mg/dL' },
-      { name: 'Creatinine', referenceRange: '0.7-1.3 mg/dL', unit: 'mg/dL' },
-    ],
-    'MICROBIOLOGY': [
-      { name: 'Bacterial Culture', referenceRange: 'No Growth', unit: 'Result' },
-      { name: 'Sensitivity Testing', referenceRange: 'Various', unit: 'Result' },
-      { name: 'Gram Stain', referenceRange: 'Normal', unit: 'Report' },
-    ],
-    'IMMUNOLOGY': [
-      { name: 'Dengue NS1 Antigen', referenceRange: 'Negative', unit: 'Result' },
-      { name: 'COVID-19 Antigen', referenceRange: 'Negative', unit: 'Result' },
-      { name: 'HIV Test', referenceRange: 'Negative', unit: 'Result' },
-    ],
-    'HISTOPATHOLOGY': [
-      { name: 'Tissue Examination', referenceRange: 'Normal', unit: 'Report' },
-      { name: 'Biopsy Analysis', referenceRange: 'Benign', unit: 'Report' },
-    ],
-    'PARASITOLOGY': [
-      { name: 'Stool Exam', referenceRange: 'Negative', unit: 'Result' },
-      { name: 'Blood Smear', referenceRange: 'Negative', unit: 'Result' },
-    ],
-    'SEROLOGY': [
-      { name: 'Hepatitis B Surface Antigen', referenceRange: 'Negative', unit: 'Result' },
-      { name: 'Hepatitis C Antibody', referenceRange: 'Negative', unit: 'Result' },
-      { name: 'Syphilis Test (RPR)', referenceRange: 'Negative', unit: 'Result' },
+      { name: 'Blood Glucose', referenceRange: '< 140 mg/dL', unit: 'mg/dL' },
+      { name: 'Cholesterol', referenceRange: '< 200 mg/dL', unit: 'mg/dL' },
     ],
   };
 
@@ -86,8 +47,85 @@ export default function TestResultsPage() {
   const [results, setResults] = useState<TestResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const statusFlow = ['pending', 'encoding', 'for_verification', 'approved', 'released'] as const;
+
+  // Inject animation keyframes
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fadeInSlideUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      @keyframes fadeInScale {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      'pending': 'bg-gray-100 text-gray-800',
+      'encoding': 'bg-blue-100 text-blue-800',
+      'for_verification': 'bg-orange-100 text-orange-800',
+      'approved': 'bg-purple-100 text-purple-800',
+      'released': 'bg-green-100 text-green-800',
+    };
+    return colors[status] || 'bg-gray-100 text-gray-800';
+  };
+
+  const getStatusLabel = (status: string) => {
+    const labels: Record<string, string> = {
+      'pending': 'PENDING',
+      'encoding': 'ENCODING',
+      'for_verification': 'FOR VERIFICATION',
+      'approved': 'APPROVED',
+      'released': 'RELEASED',
+    };
+    return labels[status] || status;
+  };
+
+  const moveToNextStatus = async (resultId: string, currentStatus: string) => {
+    const currentIndex = statusFlow.indexOf(currentStatus as any);
+    if (currentIndex < statusFlow.length - 1) {
+      setUpdatingStatusId(resultId);
+      const nextStatus = statusFlow[currentIndex + 1];
+      await updateTestResult(resultId, { status: nextStatus });
+      await loadResults();
+      setUpdatingStatusId(null);
+    }
+  };
 
   // Load test results on mount
   useEffect(() => {
@@ -108,6 +146,9 @@ export default function TestResultsPage() {
 
     if (!patientName.trim()) newErrors.patientName = 'Patient name is required';
     if (!selectedSection) newErrors.section = 'Lab section is required';
+    if (selectedSection !== 'CLINICAL CHEMISTRY') {
+      newErrors.section = 'Results can only be entered for Clinical Chemistry section';
+    }
     if (!selectedTest) newErrors.test = 'Test is required';
     if (!resultValue) newErrors.resultValue = 'Result value is required';
 
@@ -136,14 +177,6 @@ export default function TestResultsPage() {
           reference_range: testDetails.referenceRange,
           unit: testDetails.unit,
         });
-        await logActivity({
-          user_name: 'Current User',
-          encryption_key: 'ENC_KEY_TEMP',
-          action: 'edit',
-          resource: `Test Result: ${selectedTest}`,
-          resource_type: 'Test Result',
-          description: `Updated test result for patient ${patientName}`,
-        });
       } else {
         await addTestResult({
           patient_name: patientName,
@@ -152,14 +185,6 @@ export default function TestResultsPage() {
           result_value: resultValue,
           reference_range: testDetails.referenceRange,
           unit: testDetails.unit,
-        });
-        await logActivity({
-          user_name: 'Current User',
-          encryption_key: 'ENC_KEY_TEMP',
-          action: 'edit',
-          resource: `Test Result: ${selectedTest}`,
-          resource_type: 'Test Result',
-          description: `Added new test result for patient ${patientName}`,
         });
       }
       await loadResults();
@@ -193,14 +218,6 @@ export default function TestResultsPage() {
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this test result?')) {
       await deleteTestResult(id);
-      await logActivity({
-        user_name: 'Current User',
-        encryption_key: 'ENC_KEY_TEMP',
-        action: 'delete',
-        resource: 'Test Result',
-        resource_type: 'Test Result',
-        description: 'Deleted test result',
-      });
       await loadResults();
     }
   };
@@ -214,9 +231,15 @@ export default function TestResultsPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" style={{
+      animation: 'fadeIn 0.5s ease-out'
+    }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out',
+        animationDelay: '0.1s',
+        animationFillMode: 'both'
+      }}>
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Test Results Management</h1>
           <p className="text-gray-600 text-sm mt-1">Enter and manage laboratory test results</p>
@@ -246,7 +269,9 @@ export default function TestResultsPage() {
 
       {/* Test Entry Form */}
       {showForm && (
-        <div className="bg-white rounded-lg shadow-lg p-8 border-l-4 border-[#3B6255]">
+        <div className="bg-white rounded-lg shadow-lg p-8 border-l-4 border-[#3B6255]" style={{
+          animation: 'fadeInSlideUp 0.6s ease-out 0.2s backwards'
+        }}>
           <h2 className="text-2xl font-bold text-gray-800 mb-6">
             {editingId ? 'Edit Test Result' : 'Enter Test Result'}
           </h2>
@@ -257,15 +282,20 @@ export default function TestResultsPage() {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Patient Name <span className="text-red-500">*</span>
               </label>
-              <input
-                type="text"
+              <select
                 value={patientName}
                 onChange={(e) => setPatientName(e.target.value)}
-                placeholder="Enter patient name or select from list"
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
                   errors.patientName ? 'border-red-500' : 'border-gray-300'
                 }`}
-              />
+              >
+                <option value="">-- Select Patient --</option>
+                {MOCK_PATIENTS.map((patient) => (
+                  <option key={patient.id} value={`${patient.first_name} ${patient.last_name}`}>
+                    {patient.first_name} {patient.last_name} (ID: {patient.patient_id_no})
+                  </option>
+                ))}
+              </select>
               {errors.patientName && (
                 <p className="text-red-500 text-sm mt-1">{errors.patientName}</p>
               )}
@@ -297,14 +327,22 @@ export default function TestResultsPage() {
 
               {/* Section Status Info */}
               {selectedSection && (
-                <div className={`mt-3 p-3 rounded-lg text-sm bg-[#CBDED3] border border-[#8BA49A] text-[#3B6255]`}>
-                  <p>✓ Tests available in this section</p>
+                <div className={`mt-3 p-3 rounded-lg text-sm border ${
+                  selectedSection === 'CLINICAL CHEMISTRY'
+                    ? 'bg-[#CBDED3] border-[#8BA49A] text-[#3B6255]'
+                    : 'bg-yellow-50 border-yellow-300 text-yellow-800'
+                }`}>
+                  {selectedSection === 'CLINICAL CHEMISTRY' ? (
+                    <p>✓ Tests available in this section</p>
+                  ) : (
+                    <p>⚠️ Results are only available for Clinical Chemistry section</p>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Test Selection */}
-            {selectedSection && (
+            {/* Test Selection - Only show for Clinical Chemistry */}
+            {selectedSection === 'CLINICAL CHEMISTRY' && (
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Test Name <span className="text-red-500">*</span>
@@ -328,7 +366,7 @@ export default function TestResultsPage() {
             )}
 
             {/* Reference Range Display */}
-            {selectedTest && currentTests.find((t) => t.name === selectedTest) && (
+            {selectedSection === 'CLINICAL CHEMISTRY' && selectedTest && currentTests.find((t) => t.name === selectedTest) && (
               <div className="bg-[#CBDED3] border-l-4 border-[#3B6255] p-4 rounded">
                 <h3 className="font-semibold text-gray-800 mb-2">Reference Range</h3>
                 <p className="text-2xl font-bold text-[#3B6255]">
@@ -341,7 +379,7 @@ export default function TestResultsPage() {
             )}
 
             {/* Result Value */}
-            {selectedTest && (
+            {selectedSection === 'CLINICAL CHEMISTRY' && selectedTest && (
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Result Value <span className="text-red-500">*</span>
@@ -388,13 +426,20 @@ export default function TestResultsPage() {
       )}
 
       {/* Lab Sections Overview */}
-      <div className="bg-white rounded-lg shadow-lg p-8">
+      <div className="bg-white rounded-lg shadow-lg p-8" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out 0.3s backwards'
+      }}>
         <h2 className="text-2xl font-bold text-gray-800 mb-6">Available Laboratory Sections</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {LAB_SECTIONS.map((section) => (
+          {LAB_SECTIONS.map((section, index) => (
             <div
               key={section}
               className={`p-4 rounded-lg border-2 transition bg-[#CBDED3] border-[#8BA49A] hover:border-[#3B6255]`}
+              style={{
+                animation: 'fadeInScale 0.5s ease-out',
+                animationDelay: `${0.35 + index * 0.08}s`,
+                animationFillMode: 'both'
+              }}
             >
               <div className="flex items-center gap-2">
                 <CheckCircle className="w-6 h-6 text-[#3B6255]" />
@@ -409,7 +454,9 @@ export default function TestResultsPage() {
       </div>
 
       {/* Test Results List */}
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+      <div className="bg-white rounded-lg shadow-lg overflow-hidden" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out 0.5s backwards'
+      }}>
         <div className="px-8 py-6 border-b border-gray-200">
           <h2 className="text-2xl font-bold text-gray-800">Test Results ({results.length})</h2>
         </div>
@@ -443,15 +490,20 @@ export default function TestResultsPage() {
                   <td className="py-4 px-8 text-gray-600">{result.reference_range}</td>
                   <td className="py-4 px-8 text-gray-600">{new Date(result.date_created).toLocaleDateString()}</td>
                   <td className="py-4 px-8">
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        result.status === 'released'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}
-                    >
-                      {result.status === 'released' ? '✓ Released' : '⏳ Pending'}
-                    </span>
+                    <div className="flex flex-col gap-2">
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(result.status)}`}>
+                        {getStatusLabel(result.status)}
+                      </span>
+                      {result.status !== 'released' && (
+                        <button
+                          onClick={() => moveToNextStatus(result.id, result.status)}
+                          disabled={updatingStatusId === result.id}
+                          className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-xs hover:underline disabled:opacity-50 transition"
+                        >
+                          {updatingStatusId === result.id ? 'Updating...' : 'Next ➜'}
+                        </button>
+                      )}
+                    </div>
                   </td>
                   <td className="py-4 px-8 flex gap-2">
                     <button

@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS patients (
   contact_no VARCHAR(20) NOT NULL,
   address_house_no VARCHAR(255),
   address_street VARCHAR(255),
-  address_barangay VARCHAR(255) NOT NULL,
+  address_barangay VARCHAR(255),
   municipality VARCHAR(255) NOT NULL,
   province VARCHAR(255) NOT NULL,
   medical_history TEXT NOT NULL,
@@ -86,14 +86,23 @@ VALUES
   ('Juan dela Cruz', 'juan.delacruz@lis.com', 'member', 'Hematology', 'active', 'ENC_KEY_002', '2021-06-10', NOW()),
   ('Sarah Johnson', 'sarah.johnson@lis.com', 'member', 'Microbiology', 'active', 'ENC_KEY_003', '2022-01-20', NOW()),
   ('Dr. Robert Lee', 'robert.lee@lis.com', 'member', 'Immunology', 'active', 'ENC_KEY_004', '2021-11-05', NOW()),
-  ('Anne Marie Cruz', 'anne.cruz@lis.com', 'member', 'Parasitology', 'active', 'ENC_KEY_005', '2020-09-15', NOW());
+  ('Anne Marie Cruz', 'anne.cruz@lis.com', 'member', 'Parasitology', 'active', 'ENC_KEY_005', '2020-09-15', NOW()),
+  ('R. Alvaran', '2410685CogniLab@gmail.com', 'member', 'Laboratory', 'active', 'ENC_KEY_006', '2026-02-25', NOW()),
+  ('K. Buenaventura', '2410584CogniLab@gmail.com', 'member', 'Laboratory', 'active', 'ENC_KEY_007', '2026-02-25', NOW()),
+  ('M. Hernandez', '2410390CogniLab@gmail.com', 'member', 'Laboratory', 'active', 'ENC_KEY_008', '2026-02-25', NOW()),
+  ('A. Gautane', '2410702CogniLab@gmail.com', 'member', 'Laboratory', 'active', 'ENC_KEY_009', '2026-02-25', NOW()),
+  ('Ron Ron', '2410436CogniLab@gmail.com', 'member', 'Laboratory', 'active', 'ENC_KEY_010', '2026-02-25', NOW()),
+  ('R. Suarez', '2410937CogniLab@gmail.com', 'member', 'Laboratory', 'active', 'ENC_KEY_011', '2026-02-25', NOW()),
+  ('Bei Bi Boy', '2410577CogniLab@gmail.com', 'member', 'Laboratory', 'active', 'ENC_KEY_012', '2026-02-25', NOW()),
+  ('Javon', '2410236Cognilab@gmail.com', 'member', 'Laboratory', 'active', 'ENC_KEY_013', '2026-02-25', NOW()),
+  ('BSMT Lab', 'bsmtCogniLab2026@gmail.com', 'faculty', 'Laboratory', 'active', 'ENC_KEY_014', '2026-02-25', NOW())
+ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO patients (patient_id_no, last_name, first_name, middle_name, age, birthdate, sex, contact_no, address_house_no, address_street, address_barangay, municipality, province, medical_history, medications, allergy, demographics_complete, date_registered)
 VALUES
   ('PAT001', 'dela Cruz', 'Juan', 'Garcia', 45, '1979-03-15', 'Male', '09171234567', 'Lot 5', 'Makati Ave', 'Bel-Air', 'Makati', 'NCR', 'Hypertension', 'Metoprolol 50mg daily', 'Penicillin', TRUE, '2024-01-10'),
   ('PAT002', 'Santos', 'Maria', 'Lopez', 38, '1986-07-22', 'Female', '09187654321', 'Lot 1', 'EDSA', 'Diliman', 'Quezon City', 'NCR', 'Type 2 Diabetes', 'Metformin 1000mg daily', 'None', TRUE, '2024-01-12'),
-  ('PAT003', 'Gonzales', 'Pedro', 'Martinez', 52, '1972-11-08', 'Male', '09169876543', 'Blk 10', 'North Ave', 'Bagong Barrio', 'Caloocan', 'NCR', 'COPD', 'Salbutamol inhaler as needed', 'Aspirin', TRUE, '2024-01-08');
-
+ 
 INSERT INTO test_results (patient_name, section, test_name, result_value, reference_range, unit, status, date_created)
 VALUES
   ('Juan dela Cruz', 'CLINICAL CHEMISTRY', 'Random Blood Sugar (Glucose)', '110', '< 140 mg/dL', 'mg/dL', 'pending', '2024-01-15'),

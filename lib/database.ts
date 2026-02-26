@@ -1,7 +1,15 @@
 import { supabase } from './supabaseClient';
+import { MOCK_USERS, MOCK_PATIENTS, MOCK_TEST_RESULTS, MOCK_BILLING, MOCK_AUDIT_LOGS, TEST_PRICING } from './mockData';
+
+const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 
 // USERS QUERIES
 export const fetchUsers = async () => {
+  if (USE_MOCK_DATA) {
+    console.log('📦 Using MOCK data for users');
+    return MOCK_USERS;
+  }
+  
   const { data, error } = await supabase
     .from('users')
     .select('*')
@@ -71,6 +79,11 @@ export const deleteUser = async (id: string) => {
 
 // PATIENTS QUERIES
 export const fetchPatients = async () => {
+  if (USE_MOCK_DATA) {
+    console.log('📦 Using MOCK data for patients');
+    return MOCK_PATIENTS;
+  }
+  
   const { data, error } = await supabase
     .from('patients')
     .select('*')
@@ -84,6 +97,20 @@ export const fetchPatients = async () => {
 };
 
 export const addPatient = async (patient: any) => {
+  if (USE_MOCK_DATA) {
+    // Generate a unique ID for the new patient
+    const newPatient = {
+      id: `pat-${Date.now()}`,
+      ...patient,
+      date_registered: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    // Add to mock data (in-memory)
+    MOCK_PATIENTS.push(newPatient);
+    return newPatient;
+  }
+
   const { data, error } = await supabase
     .from('patients')
     .insert([patient])
@@ -97,6 +124,15 @@ export const addPatient = async (patient: any) => {
 };
 
 export const updatePatient = async (id: string, patient: any) => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_PATIENTS.findIndex(p => p.id === id);
+    if (index !== -1) {
+      MOCK_PATIENTS[index] = { ...MOCK_PATIENTS[index], ...patient, updated_at: new Date().toISOString() };
+      return MOCK_PATIENTS[index];
+    }
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('patients')
     .update(patient)
@@ -111,6 +147,15 @@ export const updatePatient = async (id: string, patient: any) => {
 };
 
 export const deletePatient = async (id: string) => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_PATIENTS.findIndex(p => p.id === id);
+    if (index !== -1) {
+      MOCK_PATIENTS.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+
   const { error } = await supabase
     .from('patients')
     .delete()
@@ -125,6 +170,11 @@ export const deletePatient = async (id: string) => {
 
 // TEST RESULTS QUERIES
 export const fetchTestResults = async () => {
+  if (USE_MOCK_DATA) {
+    console.log('📦 Using MOCK data for test results');
+    return MOCK_TEST_RESULTS;
+  }
+  
   const { data, error } = await supabase
     .from('test_results')
     .select('*')
@@ -138,6 +188,36 @@ export const fetchTestResults = async () => {
 };
 
 export const addTestResult = async (result: any) => {
+  if (USE_MOCK_DATA) {
+    const newResult = {
+      id: `result-${Date.now()}`,
+      ...result,
+      status: result.status || 'pending', // Default to 'pending' if not provided
+      date_created: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    MOCK_TEST_RESULTS.push(newResult);
+
+    // Automatically create billing entry for the test
+    const testCost = TEST_PRICING[result.section]?.[result.test_name] || 300; // Default cost if not found
+    const billingEntry = {
+      id: `billing-${Date.now()}`,
+      patient_name: result.patient_name,
+      test_name: result.test_name,
+      section: result.section,
+      amount: testCost,
+      status: 'unpaid',
+      date_created: new Date().toISOString().split('T')[0],
+      description: `Lab test: ${result.test_name}`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    MOCK_BILLING.push(billingEntry);
+
+    return newResult;
+  }
+
   const { data, error } = await supabase
     .from('test_results')
     .insert([result])
@@ -151,6 +231,15 @@ export const addTestResult = async (result: any) => {
 };
 
 export const updateTestResult = async (id: string, result: any) => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_TEST_RESULTS.findIndex(r => r.id === id);
+    if (index !== -1) {
+      MOCK_TEST_RESULTS[index] = { ...MOCK_TEST_RESULTS[index], ...result, updated_at: new Date().toISOString() };
+      return MOCK_TEST_RESULTS[index];
+    }
+    return null;
+  }
+
   const { data, error } = await supabase
     .from('test_results')
     .update(result)
@@ -165,6 +254,15 @@ export const updateTestResult = async (id: string, result: any) => {
 };
 
 export const deleteTestResult = async (id: string) => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_TEST_RESULTS.findIndex(r => r.id === id);
+    if (index !== -1) {
+      MOCK_TEST_RESULTS.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+
   const { error } = await supabase
     .from('test_results')
     .delete()
@@ -177,8 +275,77 @@ export const deleteTestResult = async (id: string) => {
   return true;
 };
 
+// BILLING QUERIES
+export const fetchBilling = async () => {
+  if (USE_MOCK_DATA) {
+    console.log('📦 Using MOCK data for billing');
+    return MOCK_BILLING;
+  }
+  
+  const { data, error } = await supabase
+    .from('billing')
+    .select('*')
+    .order('date_created', { ascending: false });
+  
+  if (error) {
+    console.error('Error fetching billing:', error);
+    return [];
+  }
+  return data || [];
+};
+
+export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid') => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_BILLING.findIndex(b => b.id === id);
+    if (index !== -1) {
+      MOCK_BILLING[index] = { ...MOCK_BILLING[index], status, updated_at: new Date().toISOString() };
+      return MOCK_BILLING[index];
+    }
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('billing')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select();
+  
+  if (error) {
+    console.error('Error updating billing status:', error);
+    return null;
+  }
+  return data?.[0] || null;
+};
+
+export const deleteBilling = async (id: string) => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_BILLING.findIndex(b => b.id === id);
+    if (index !== -1) {
+      MOCK_BILLING.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+
+  const { error } = await supabase
+    .from('billing')
+    .delete()
+    .eq('id', id);
+  
+  if (error) {
+    console.error('Error deleting billing:', error);
+    return false;
+  }
+  return true;
+};
+
 // AUDIT LOGS QUERIES
 export const fetchAuditLogs = async () => {
+  if (USE_MOCK_DATA) {
+    console.log('📦 Using MOCK data for audit logs');
+    return MOCK_AUDIT_LOGS;
+  }
+  
   const { data, error } = await supabase
     .from('audit_logs')
     .select('*')
@@ -202,6 +369,23 @@ export const logActivity = async (log: {
   ip_address?: string;
 }) => {
   try {
+    if (USE_MOCK_DATA) {
+      const newLog: any = {
+        id: `log-${Date.now()}`,
+        user_id: log.user_id || 'user-temp',
+        user_name: log.user_name,
+        encryption_key: log.encryption_key,
+        action: log.action,
+        resource: log.resource,
+        resource_type: log.resource_type,
+        description: log.description,
+        ip_address: log.ip_address || 'N/A',
+        created_at: new Date().toISOString(),
+      };
+      MOCK_AUDIT_LOGS.push(newLog);
+      return true;
+    }
+
     const { error } = await supabase
       .from('audit_logs')
       .insert([{

@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useAuth } from '@/lib/authContext';
 import { User, Mail, Phone, MapPin, Briefcase, Award, Edit2, Save, X } from 'lucide-react';
 
 interface UserProfile {
-  id: number;
+  id: string;
   fullName: string;
   email: string;
   phone: string;
@@ -20,25 +21,53 @@ interface UserProfile {
 }
 
 export default function ProfilePage() {
+  const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
 
   const [profile, setProfile] = useState<UserProfile>({
-    id: 1,
-    fullName: 'Dr. Maria Santos',
-    email: 'maria.santos@lis.com',
+    id: user?.id || 'unknown',
+    fullName: user?.full_name || 'Unknown User',
+    email: user?.email || 'N/A',
     phone: '+63 917 1234567',
-    role: 'Laboratory Director',
-    department: 'Clinical Chemistry',
-    avatar: '👨‍⚕️',
-    credentials: ['MD', 'DPSP'],
-    certifications: ['Clinical Pathology Specialist', 'ISO 15189 Quality Manager'],
-    joinDate: '2020-03-15',
+    role: user?.role === 'faculty' ? 'Laboratory Director' : 'Medical Technologist',
+    department: user?.department || 'General',
+    avatar: user?.role === 'faculty' ? '👨‍⚕️' : '👤',
+    credentials: user?.role === 'faculty' ? ['MD', 'DPSP'] : ['BSMT'],
+    certifications: user?.role === 'faculty' 
+      ? ['Clinical Pathology Specialist', 'ISO 15189 Quality Manager']
+      : [`Certified in ${user?.department || 'Laboratory Science'}`],
+    joinDate: (user as any)?.join_date || new Date().toISOString().split('T')[0],
     address: 'Lot 5, Block 2, Medical Complex',
     city: 'Manila',
     province: 'NCR',
   });
 
   const [editData, setEditData] = useState(profile);
+
+  // Update profile when user changes
+  useEffect(() => {
+    if (user) {
+      const newProfile = {
+        id: user.id,
+        fullName: user.full_name,
+        email: user.email,
+        phone: '+63 917 1234567',
+        role: user.role === 'faculty' ? 'Laboratory Director' : 'Medical Technologist',
+        department: user.department,
+        avatar: user.role === 'faculty' ? '👨‍⚕️' : '👤',
+        credentials: user.role === 'faculty' ? ['MD', 'DPSP'] : ['BSMT'],
+        certifications: user.role === 'faculty'
+          ? ['Clinical Pathology Specialist', 'ISO 15189 Quality Manager']
+          : [`Certified in ${user.department}`],
+        joinDate: (user as any).join_date || new Date().toISOString().split('T')[0],
+        address: 'Lot 5, Block 2, Medical Complex',
+        city: 'Manila',
+        province: 'NCR',
+      };
+      setProfile(newProfile);
+      setEditData(newProfile);
+    }
+  }, [user]);
 
   const handleEdit = () => {
     setIsEditing(true);
@@ -59,10 +88,57 @@ export default function ProfilePage() {
     setEditData({ ...editData, [field]: value });
   };
 
+  // Inject animation keyframes
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fadeInSlideUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      @keyframes fadeInScale {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" style={{
+      animation: 'fadeIn 0.5s ease-out'
+    }}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out',
+        animationDelay: '0.1s',
+        animationFillMode: 'both'
+      }}>
         <div>
           <h1 className="text-3xl font-bold text-gray-800">My Profile</h1>
           <p className="text-gray-600 text-sm mt-1">View and manage your professional information</p>
@@ -79,7 +155,9 @@ export default function ProfilePage() {
       </div>
 
       {/* Profile Card */}
-      <div className="bg-white rounded-lg shadow-lg p-8 border-l-4 border-[#3B6255]">
+      <div className="bg-white rounded-lg shadow-lg p-8 border-l-4 border-[#3B6255]" style={{
+        animation: 'fadeInScale 0.6s ease-out 0.2s backwards'
+      }}>
         {/* Profile Header */}
         <div className="flex items-start gap-8 pb-8 border-b border-gray-200">
           <div className="w-24 h-24 bg-gradient-to-br from-[#3B6255] to-green-900 rounded-full flex items-center justify-center text-5xl">

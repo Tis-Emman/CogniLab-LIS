@@ -1,16 +1,90 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Users, Clock, CheckCircle2, AlertCircle, Plus, Eye, CreditCard } from 'lucide-react';
+import { Users, Clock, CheckCircle2, AlertCircle, Plus, CreditCard, Loader } from 'lucide-react';
+import { fetchPatients, fetchTestResults, fetchBilling } from '@/lib/database';
 
 export default function Dashboard() {
-  // Demo data
-  const stats = [
-    { label: 'Total Patients', value: '1,245', Icon: Users, color: 'from-[#3B6255] to-[#5A7669]' },
-    { label: 'Pending Results', value: '23', Icon: Clock, color: 'from-[#5A7669] to-[#3B6255]' },
-    { label: 'Released Results', value: '892', Icon: CheckCircle2, color: 'from-green-400 to-green-600' },
-    { label: 'Unpaid Billings', value: '₱45,230', Icon: AlertCircle, color: 'from-emerald-500 to-emerald-700' },
-  ];
+  const [stats, setStats] = useState([
+    { label: 'Total Patients', value: '0', Icon: Users, color: 'from-[#3B6255] to-[#5A7669]' },
+    { label: 'Pending Results', value: '0', Icon: Clock, color: 'from-[#5A7669] to-[#3B6255]' },
+    { label: 'Released Results', value: '0', Icon: CheckCircle2, color: 'from-green-400 to-green-600' },
+    { label: 'Unpaid Billings', value: '₱0', Icon: AlertCircle, color: 'from-emerald-500 to-emerald-700' },
+  ]);
+  const [loading, setLoading] = useState(true);
+
+  // Inject animation keyframes
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fadeInSlideUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      @keyframes fadeInScale {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        const patients = await fetchPatients();
+        const results = await fetchTestResults();
+        const billings = await fetchBilling();
+
+        // Calculate statistics
+        const totalPatients = patients.length;
+        const pendingResults = results.filter(r => r.status === 'pending').length;
+        const releasedResults = results.filter(r => r.status === 'released').length;
+        const unpaidBillings = billings
+          .filter(b => b.status === 'unpaid')
+          .reduce((sum, b) => sum + (b.amount || 0), 0);
+
+        setStats([
+          { label: 'Total Patients', value: totalPatients.toString(), Icon: Users, color: 'from-[#3B6255] to-[#5A7669]' },
+          { label: 'Pending Results', value: pendingResults.toString(), Icon: Clock, color: 'from-[#5A7669] to-[#3B6255]' },
+          { label: 'Released Results', value: releasedResults.toString(), Icon: CheckCircle2, color: 'from-green-400 to-green-600' },
+          { label: 'Unpaid Billings', value: `₱${unpaidBillings.toLocaleString()}`, Icon: AlertCircle, color: 'from-emerald-500 to-emerald-700' },
+        ]);
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDashboardData();
+  }, []);
 
   const recentPatients = [
     {
@@ -40,9 +114,15 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" style={{
+      animation: 'fadeIn 0.5s ease-out'
+    }}>
       {/* Welcome Section */}
-      <div className="bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg shadow-lg p-8">
+      <div className="bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg shadow-lg p-8" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out',
+        animationDelay: '0.1s',
+        animationFillMode: 'both'
+      }}>
         <h1 className="text-3xl font-bold mb-2">Welcome to LIS</h1>
         <p className="text-[#CBDED3]">
           Manage laboratory tests, patients, and billing efficiently. Ensure quality care with secure data management.
@@ -50,32 +130,50 @@ export default function Dashboard() {
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, index) => {
-          const Icon = stat.Icon;
-          return (
-            <div
-              key={index}
-              className={`bg-gradient-to-br ${stat.color} text-white rounded-lg shadow-lg p-6 hover:shadow-xl transition`}
-            >
-              <div className="flex items-center justify-between mb-4">
-                <Icon className="w-8 h-8" />
-                <span className="text-sm font-semibold opacity-80">Today</span>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out 0.2s backwards'
+      }}>
+        {loading ? (
+          <div className="col-span-4 flex items-center justify-center py-12">
+            <Loader className="w-8 h-8 animate-spin text-[#3B6255]" />
+          </div>
+        ) : (
+          stats.map((stat, index) => {
+            const Icon = stat.Icon;
+            return (
+              <div
+                key={index}
+                className={`bg-gradient-to-br ${stat.color} text-white rounded-lg shadow-lg p-6 hover:shadow-xl transition`}
+                style={{
+                  animation: 'fadeInScale 0.5s ease-out',
+                  animationDelay: `${0.3 + index * 0.1}s`,
+                  animationFillMode: 'both'
+                }}
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <Icon className="w-8 h-8" />
+                  <span className="text-sm font-semibold opacity-80">Live</span>
+                </div>
+                <p className="text-3xl font-bold mb-1">{stat.value}</p>
+                <p className="text-sm opacity-90">{stat.label}</p>
               </div>
-              <p className="text-3xl font-bold mb-1">{stat.value}</p>
-              <p className="text-sm opacity-90">{stat.label}</p>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
       {/* Quick Actions */}
-      <div className="bg-white rounded-lg shadow-lg p-8">
+      <div className="bg-white rounded-lg shadow-lg p-8" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out 0.4s backwards'
+      }}>
         <h2 className="text-2xl font-bold text-gray-800 mb-6">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Link
             href="/dashboard/patients"
             className="p-6 bg-gradient-to-br from-[#E2DFDA] to-[#CBDED3] border-2 border-[#8BA49A] rounded-lg hover:border-[#3B6255] transition cursor-pointer group"
+            style={{
+              animation: 'fadeInScale 0.5s ease-out 0.45s backwards'
+            }}
           >
             <div className="w-12 h-12 bg-[#CBDED3] rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition">
               <Users className="w-6 h-6 text-[#3B6255]" />
@@ -87,6 +185,9 @@ export default function Dashboard() {
           <Link
             href="/dashboard/results"
             className="p-6 bg-gradient-to-br from-[#CBDED3] to-[#8BA49A] border-2 border-[#8BA49A] rounded-lg hover:border-[#3B6255] transition cursor-pointer group"
+            style={{
+              animation: 'fadeInScale 0.5s ease-out 0.5s backwards'
+            }}
           >
             <div className="w-12 h-12 bg-[#8BA49A] rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition">
               <Plus className="w-6 h-6 text-white" />
@@ -98,6 +199,9 @@ export default function Dashboard() {
           <Link
             href="/dashboard/billing"
             className="p-6 bg-gradient-to-br from-[#D2C49E] to-[#CBDED3] border-2 border-[#8BA49A] rounded-lg hover:border-[#3B6255] transition cursor-pointer group"
+            style={{
+              animation: 'fadeInScale 0.5s ease-out 0.55s backwards'
+            }}
           >
             <div className="w-12 h-12 bg-[#D2C49E] rounded-lg flex items-center justify-center mb-3 group-hover:scale-110 transition">
               <CreditCard className="w-6 h-6 text-[#3B6255]" />
@@ -109,7 +213,9 @@ export default function Dashboard() {
       </div>
 
       {/* Recent Patients */}
-      <div className="bg-white rounded-lg shadow-lg p-8">
+      <div className="bg-white rounded-lg shadow-lg p-8" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out 0.6s backwards'
+      }}>
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-2xl font-bold text-gray-800">Recent Patients</h2>
           <Link

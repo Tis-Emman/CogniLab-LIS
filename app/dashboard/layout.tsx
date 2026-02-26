@@ -41,9 +41,9 @@ export default function DashboardLayout({
       <Sidebar />
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 flex flex-col overflow-hidden">
         {/* Top Header */}
-        <div className="bg-white border-b border-gray-200 px-8 py-4 shadow-sm fixed top-0 right-0 left-64 z-30">
+        <div className="bg-white border-b border-gray-200 px-8 py-4 shadow-sm flex-shrink-0">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-800">
               Laboratory Information System
@@ -61,7 +61,7 @@ export default function DashboardLayout({
         </div>
 
         {/* Content Area */}
-        <div className="pt-24 px-8 pb-8">
+        <div className="flex-1 overflow-auto px-8 py-8">
           {children}
         </div>
       </main>

@@ -1,68 +1,128 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CheckCircle, Clock, TrendingUp, AlertCircle, Download, FileText } from 'lucide-react';
+import { fetchBilling, updateBillingStatus, deleteBilling, logActivity } from '@/lib/database';
 
 interface BillingRecord {
-  id: number;
-  patientName: string;
-  testName: string;
+  id: string;
+  patient_name?: string;
+  patientName?: string;
+  test_name?: string;
+  testName?: string;
   amount: number;
-  paymentStatus: 'paid' | 'unpaid';
+  status: 'paid' | 'unpaid';
+  paymentStatus?: 'paid' | 'unpaid';
+  date_paid?: string;
   datePaid?: string;
+  or_number?: string;
   orNumber?: string;
-  dateCreated: string;
+  date_created?: string;
+  dateCreated?: string;
+  description?: string;
+  section?: string;
+  created_at?: string;
 }
 
-const TEST_PRICES: Record<string, number> = {
-  'Random Blood Sugar (Glucose)': 150,
-  'Blood Cholesterol': 200,
-};
-
 export default function BillingPage() {
-  const [billings, setBillings] = useState<BillingRecord[]>([
-    {
-      id: 1,
-      patientName: 'Juan dela Cruz',
-      testName: 'Random Blood Sugar (Glucose)',
-      amount: 150,
-      paymentStatus: 'unpaid',
-      dateCreated: '2024-01-15',
-    },
-    {
-      id: 2,
-      patientName: 'Maria Santos',
-      testName: 'Blood Cholesterol',
-      amount: 200,
-      paymentStatus: 'paid',
-      datePaid: '2024-01-14',
-      orNumber: 'OR-2024-001',
-      dateCreated: '2024-01-14',
-    },
-    {
-      id: 3,
-      patientName: 'Pedro Gonzales',
-      testName: 'Random Blood Sugar (Glucose)',
-      amount: 150,
-      paymentStatus: 'unpaid',
-      dateCreated: '2024-01-13',
-    },
-  ]);
+  const [billings, setBillings] = useState<BillingRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Inject animation keyframes
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fadeInSlideUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      @keyframes fadeInScale {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
+  // Load billing records on mount
+  useEffect(() => {
+    loadBilling();
+  }, []);
+
+  const loadBilling = async () => {
+    setLoading(true);
+    const data = await fetchBilling();
+    setBillings(data);
+    setLoading(false);
+  };
+
+  const handlePaymentStatusChange = async (id: string, newStatus: 'paid' | 'unpaid') => {
+    await updateBillingStatus(id, newStatus);
+    await logActivity({
+      user_name: 'Current User',
+      encryption_key: 'ENC_KEY_TEMP',
+      action: 'edit',
+      resource: `Billing: ${id}`,
+      resource_type: 'Billing Record',
+      description: `Updated billing status to ${newStatus}`,
+    });
+    await loadBilling();
+  };
+
+  const handleDeleteBilling = async (id: string) => {
+    if (confirm('Delete this billing record?')) {
+      await deleteBilling(id);
+      await logActivity({
+        user_name: 'Current User',
+        encryption_key: 'ENC_KEY_TEMP',
+        action: 'delete',
+        resource: `Billing: ${id}`,
+        resource_type: 'Billing Record',
+        description: 'Deleted billing record',
+      });
+      await loadBilling();
+    }
+  };
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedBilling, setSelectedBilling] = useState<BillingRecord | null>(null);
   const [paymentData, setPaymentData] = useState({ orNumber: '', datePaid: '' });
 
   const totalRevenue = billings
-    .filter((b) => b.paymentStatus === 'paid')
+    .filter((b) => (b.status || b.paymentStatus) === 'paid')
     .reduce((sum, b) => sum + b.amount, 0);
 
   const totalUnpaid = billings
-    .filter((b) => b.paymentStatus === 'unpaid')
+    .filter((b) => (b.status || b.paymentStatus) === 'unpaid')
     .reduce((sum, b) => sum + b.amount, 0);
 
-  const paidCount = billings.filter((b) => b.paymentStatus === 'paid').length;
-  const unpaidCount = billings.filter((b) => b.paymentStatus === 'unpaid').length;
+  const paidCount = billings.filter((b) => (b.status || b.paymentStatus) === 'paid').length;
+  const unpaidCount = billings.filter((b) => (b.status || b.paymentStatus) === 'unpaid').length;
 
   const handleRecordPayment = () => {
     if (!selectedBilling || !paymentData.orNumber || !paymentData.datePaid) {
@@ -104,63 +164,86 @@ export default function BillingPage() {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" style={{
+      animation: 'fadeIn 0.5s ease-out'
+    }}>
       {/* Header */}
-      <div>
+      <div style={{
+        animation: 'fadeInSlideUp 0.6s ease-out',
+        animationDelay: '0.1s',
+        animationFillMode: 'both'
+      }}>
         <h1 className="text-3xl font-bold text-gray-800">Billing Management</h1>
         <p className="text-gray-600 text-sm mt-1">Track payments and manage billing records</p>
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-gradient-to-br from-green-400 to-green-600 text-white rounded-lg shadow-lg p-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out 0.2s backwards'
+      }}>
+        <div className="bg-gradient-to-br from-emerald-200 to-emerald-400 text-gray-800 rounded-lg shadow-lg p-6" style={{
+          animation: 'fadeInScale 0.5s ease-out 0.25s backwards'
+        }}>
           <div className="flex items-center justify-between mb-4">
             <CheckCircle className="w-8 h-8" />
           </div>
-          <p className="text-sm opacity-90">Paid Transactions</p>
+          <p className="text-sm opacity-90 font-medium">Paid Transactions</p>
           <p className="text-3xl font-bold">{paidCount}</p>
         </div>
 
-        <div className="bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-lg shadow-lg p-6">
+        <div className="bg-gradient-to-br from-lime-200 to-emerald-300 text-gray-800 rounded-lg shadow-lg p-6" style={{
+          animation: 'fadeInScale 0.5s ease-out 0.3s backwards'
+        }}>
           <div className="flex items-center justify-between mb-4">
             <Clock className="w-8 h-8" />
           </div>
-          <p className="text-sm opacity-90">Unpaid Transactions</p>
+          <p className="text-sm opacity-90 font-medium">Unpaid Transactions</p>
           <p className="text-3xl font-bold">{unpaidCount}</p>
         </div>
 
-        <div className="bg-gradient-to-br from-[#3B6255] to-green-900 text-white rounded-lg shadow-lg p-6">
+        <div className="bg-gradient-to-br from-[#3B6255] to-green-800 text-white rounded-lg shadow-lg p-6" style={{
+          animation: 'fadeInScale 0.5s ease-out 0.35s backwards'
+        }}>
           <div className="flex items-center justify-between mb-4">
             <TrendingUp className="w-8 h-8" />
           </div>
-          <p className="text-sm opacity-90">Total Revenue</p>
+          <p className="text-sm opacity-90 font-medium">Total Revenue</p>
           <p className="text-3xl font-bold">₱{totalRevenue.toLocaleString()}</p>
         </div>
 
-        <div className="bg-gradient-to-br from-red-400 to-red-600 text-white rounded-lg shadow-lg p-6">
+        <div className="bg-gradient-to-br from-green-200 to-emerald-400 text-gray-800 rounded-lg shadow-lg p-6" style={{
+          animation: 'fadeInScale 0.5s ease-out 0.4s backwards'
+        }}>
           <div className="flex items-center justify-between mb-4">
             <AlertCircle className="w-8 h-8" />
           </div>
-          <p className="text-sm opacity-90">Outstanding Balance</p>
+          <p className="text-sm opacity-90 font-medium">Outstanding Balance</p>
           <p className="text-3xl font-bold">₱{totalUnpaid.toLocaleString()}</p>
         </div>
       </div>
 
       {/* Test Prices Reference */}
-      <div className="bg-white rounded-lg shadow-lg p-8">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">Test Pricing</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {Object.entries(TEST_PRICES).map(([testName, price]) => (
-            <div key={testName} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-gray-800 font-semibold mb-2">{testName}</p>
-              <p className="text-2xl font-bold text-[#3B6255]">₱{price}</p>
-            </div>
-          ))}
-        </div>
+      <div className="bg-white rounded-lg shadow-lg p-8" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out 0.45s backwards'
+      }}>
+        <h2 className="text-2xl font-bold text-gray-800 mb-6">Active Billing Records ({billings.length})</h2>
+        {loading ? (
+          <div className="text-center py-8">
+            <p className="text-gray-600">Loading billing records...</p>
+          </div>
+        ) : billings.length === 0 ? (
+          <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
+            <AlertCircle className="w-12 h-12 mx-auto text-gray-400 mb-3" />
+            <p className="text-gray-600 font-medium">No billing records yet</p>
+            <p className="text-sm text-gray-500">Test results will automatically generate billing entries</p>
+          </div>
+        ) : null}
       </div>
 
       {/* Billing Records */}
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+      <div className="bg-white rounded-lg shadow-lg overflow-hidden" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out 0.5s backwards'
+      }}>
         <div className="px-8 py-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-800">Billing Records ({billings.length})</h2>
@@ -192,57 +275,74 @@ export default function BillingPage() {
               </tr>
             </thead>
             <tbody>
-              {billings.map((billing) => (
+              {billings.length > 0 && billings.map((billing) => (
                 <tr key={billing.id} className="border-b border-gray-100 hover:bg-[#F0F4F1] transition">
-                  <td className="py-4 px-8 font-medium text-gray-800">{billing.patientName}</td>
-                  <td className="py-4 px-8 text-gray-600">{billing.testName}</td>
+                  <td className="py-4 px-8 font-medium text-gray-800">{billing.patient_name || billing.patientName || 'N/A'}</td>
+                  <td className="py-4 px-8 text-gray-600">{billing.test_name || billing.testName || 'N/A'}</td>
                   <td className="py-4 px-8 font-semibold text-[#3B6255]">₱{billing.amount}</td>
                   <td className="py-4 px-8">
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        billing.paymentStatus === 'paid'
+                        (billing.status || billing.paymentStatus) === 'paid'
                           ? 'bg-green-100 text-green-800'
                           : 'bg-yellow-100 text-yellow-800'
                       }`}
                     >
-                      {billing.paymentStatus === 'paid' ? '✓ Paid' : '⏳ Unpaid'}
+                      {(billing.status || billing.paymentStatus) === 'paid' ? '✓ Paid' : '⏳ Unpaid'}
                     </span>
                   </td>
                   <td className="py-4 px-8 text-gray-600">
-                    {billing.datePaid ? (
-                      <span className="text-green-600 font-semibold">{billing.datePaid}</span>
+                    {billing.date_paid || billing.datePaid ? (
+                      <span className="text-green-600 font-semibold">{billing.date_paid || billing.datePaid}</span>
                     ) : (
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
                   <td className="py-4 px-8 text-gray-600">
-                    {billing.orNumber ? (
+                    {billing.or_number || billing.orNumber ? (
                       <span className="font-mono bg-gray-100 px-2 py-1 rounded text-xs">
-                        {billing.orNumber}
+                        {billing.or_number || billing.orNumber}
                       </span>
                     ) : (
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className="py-4 px-8 text-gray-600">{billing.dateCreated}</td>
-                  <td className="py-4 px-8">
-                    {billing.paymentStatus === 'unpaid' ? (
-                      <button
-                        onClick={() => {
-                          setSelectedBilling(billing);
-                          setShowPaymentModal(true);
-                        }}
-                        className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-sm"
-                      >
-                        Record Payment
-                      </button>
+                  <td className="py-4 px-8 text-gray-600">{billing.date_created || billing.dateCreated || 'N/A'}</td>
+                  <td className="py-4 px-8 flex gap-2">
+                    {(billing.status || billing.paymentStatus) === 'unpaid' ? (
+                      <>
+                        <button
+                          onClick={() => handlePaymentStatusChange(billing.id as string, 'paid')}
+                          className="text-green-600 hover:text-green-800 font-semibold text-sm"
+                          title="Mark as Paid"
+                        >
+                          Mark Paid
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBilling(billing.id as string)}
+                          className="text-red-600 hover:text-red-800 font-semibold text-sm"
+                          title="Delete"
+                        >
+                          Delete
+                        </button>
+                      </>
                     ) : (
-                      <button
-                        onClick={() => handleMarkUnpaid(billing)}
-                        className="text-orange-600 hover:text-orange-800 font-semibold text-sm"
-                      >
-                        Mark Unpaid
-                      </button>
+                      <>
+                        <button
+                          onClick={() => handlePaymentStatusChange(billing.id as string, 'unpaid')}
+                          className="text-orange-600 hover:text-orange-800 font-semibold text-sm"
+                          title="Mark as Unpaid"
+                        >
+                          Mark Unpaid
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBilling(billing.id as string)}
+                          className="text-red-600 hover:text-red-800 font-semibold text-sm"
+                          title="Delete"
+                        >
+                          Delete
+                        </button>
+                      </>
                     )}
                   </td>
                 </tr>

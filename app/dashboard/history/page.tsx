@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Users, LogIn, CheckCircle, Clock, Download } from 'lucide-react';
 
 interface AccessLog {
@@ -59,6 +59,47 @@ export default function AccessHistoryPage() {
   const [filterRole, setFilterRole] = useState<string>('');
   const [filterUser, setFilterUser] = useState<string>('');
 
+  // Inject animation keyframes
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes fadeInSlideUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      
+      @keyframes fadeInScale {
+        from {
+          opacity: 0;
+          transform: scale(0.95);
+        }
+        to {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
+
   const filteredLogs = accessLogs.filter((log) => {
     if (filterRole && log.role !== filterRole) return false;
     if (filterUser && !log.userName.toLowerCase().includes(filterUser.toLowerCase())) return false;
@@ -83,16 +124,26 @@ export default function AccessHistoryPage() {
   const activeSessions = accessLogs.filter((log) => !log.logoutTime).length;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" style={{
+      animation: 'fadeIn 0.5s ease-out'
+    }}>
       {/* Header */}
-      <div>
+      <div style={{
+        animation: 'fadeInSlideUp 0.6s ease-out',
+        animationDelay: '0.1s',
+        animationFillMode: 'both'
+      }}>
         <h1 className="text-3xl font-bold text-gray-800">Access History & Audit Log</h1>
         <p className="text-gray-600 text-sm mt-1">Monitor user access and login records</p>
       </div>
 
       {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-gradient-to-br from-[#3B6255] to-green-900 text-white rounded-lg shadow-lg p-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out 0.2s backwards'
+      }}>
+        <div className="bg-gradient-to-br from-[#3B6255] to-green-900 text-white rounded-lg shadow-lg p-6" style={{
+          animation: 'fadeInScale 0.5s ease-out 0.25s backwards'
+        }}>
           <div className="flex items-center justify-between mb-4">
             <Users className="w-8 h-8" />
           </div>
@@ -100,7 +151,9 @@ export default function AccessHistoryPage() {
           <p className="text-3xl font-bold">{uniqueUsers.length}</p>
         </div>
 
-        <div className="bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-lg shadow-lg p-6">
+        <div className="bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-lg shadow-lg p-6" style={{
+          animation: 'fadeInScale 0.5s ease-out 0.3s backwards'
+        }}>
           <div className="flex items-center justify-between mb-4">
             <LogIn className="w-8 h-8" />
           </div>
@@ -108,7 +161,9 @@ export default function AccessHistoryPage() {
           <p className="text-3xl font-bold">{activeSessions}</p>
         </div>
 
-        <div className="bg-gradient-to-br from-green-400 to-green-600 text-white rounded-lg shadow-lg p-6">
+        <div className="bg-gradient-to-br from-green-400 to-green-600 text-white rounded-lg shadow-lg p-6" style={{
+          animation: 'fadeInScale 0.5s ease-out 0.35s backwards'
+        }}>
           <div className="flex items-center justify-between mb-4">
             <CheckCircle className="w-8 h-8" />
           </div>
@@ -118,7 +173,9 @@ export default function AccessHistoryPage() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow-lg p-6">
+      <div className="bg-white rounded-lg shadow-lg p-6" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out 0.4s backwards'
+      }}>
         <h2 className="text-lg font-bold text-gray-800 mb-4">Filter Records</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -152,7 +209,9 @@ export default function AccessHistoryPage() {
       </div>
 
       {/* Access Logs Table */}
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+      <div className="bg-white rounded-lg shadow-lg overflow-hidden" style={{
+        animation: 'fadeInSlideUp 0.6s ease-out 0.5s backwards'
+      }}>
         <div className="px-8 py-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-800">

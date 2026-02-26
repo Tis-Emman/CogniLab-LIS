@@ -2,6 +2,9 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
+import { MOCK_AUTH_USER, MOCK_USERS } from './mockData';
+
+const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 
 interface User {
   id: string;
@@ -10,6 +13,7 @@ interface User {
   role: string;
   department: string;
   encryption_key: string;
+  join_date?: string;
 }
 
 interface AuthContextType {
@@ -32,6 +36,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        // MOCK MODE: Use mock data
+        if (USE_MOCK_DATA) {
+          console.log('🎭 Using MOCK authentication');
+          setUser(MOCK_AUTH_USER);
+          setAuthUser({ id: MOCK_AUTH_USER.id, email: MOCK_AUTH_USER.email });
+          setLoading(false);
+          return;
+        }
+
+        // TEST MODE: Bypass login
+        if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('testMode') === 'true') {
+          setUser({
+            id: 'test-user-id',
+            email: 'test@lis.com',
+            full_name: 'Test User',
+            role: 'member',
+            department: 'Testing',
+            encryption_key: 'TEST_KEY_001',
+          });
+          setAuthUser({ id: 'test-user-id', email: 'test@lis.com' });
+          setLoading(false);
+          return;
+        }
+
         const {
           data: { session },
         } = await supabase.auth.getSession();
@@ -84,7 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .from('users')
         .select('*')
         .eq('email', authUser.email)
-        .single();
+        .maybeSingle();
 
       if (error) {
         console.error('Database query error:', error.message, error.details);
@@ -102,7 +130,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           encryption_key: data.encryption_key,
         });
       } else {
-        console.warn('No user profile data returned');
+        console.warn('No user profile found for email:', authUser.email);
+        setUser(null);
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
@@ -146,6 +175,44 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     try {
+      // MOCK MODE: Accept only authorized credentials
+      if (USE_MOCK_DATA) {
+        console.log('🎭 MOCK MODE LOGIN:', email);
+        
+        // ALL AUTHORIZED USERS CAN ACCESS THE SYSTEM
+        const authorizedCredentials = [
+          // Medtech Members
+          { email: '2410685CogniLab@gmail.com', password: 'RAlvaran685' },
+          { email: '2410584CogniLab@gmail.com', password: 'KBuenaventura584' },
+          { email: '2410390CogniLab@gmail.com', password: 'MHernandez390' },
+          { email: '2410702CogniLab@gmail.com', password: 'AGautane702' },
+          { email: '2410436CogniLab@gmail.com', password: 'ronron67' },
+          { email: '2410937CogniLab@gmail.com', password: 'RSuarez937' },
+          { email: '2410577CogniLab@gmail.com', password: 'BeiBiBoy20!' },
+          { email: '2410236Cognilab@gmail.com', password: 'Javon036' },
+          // Faculty
+          { email: 'bsmtCogniLab2026@gmail.com', password: 'BSMT2026LIS' },
+        ];
+
+        const isValid = authorizedCredentials.some(
+          (cred) => cred.email === email && cred.password === password
+        );
+
+        if (!isValid) {
+          throw new Error('Invalid email or password');
+        }
+
+        // Find the user in mock data
+        const userInMock = MOCK_USERS.find((u) => u.email === email);
+        if (!userInMock) {
+          throw new Error('User not found in system');
+        }
+
+        setUser(userInMock);
+        setAuthUser({ id: userInMock.id, email: userInMock.email });
+        return;
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -165,6 +232,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signOut = async () => {
     try {
+      // TEST MODE: Clear test user
+      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('testMode') === 'true') {
+        setUser(null);
+        setAuthUser(null);
+        window.location.href = '/login';
+        return;
+      }
+
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       setUser(null);
