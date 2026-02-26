@@ -238,18 +238,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(userInMock);
       setAuthUser({ id: userInMock.id, email: userInMock.email });
       return;
-
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (error) throw error;
-
-      if (data.user) {
-        setAuthUser(data.user);
-        await fetchUserProfile(data.user.id);
-      }
     } catch (error) {
       console.error('Sign in error:', error);
       throw error;
