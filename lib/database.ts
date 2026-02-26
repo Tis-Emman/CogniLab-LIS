@@ -96,7 +96,7 @@ export const fetchPatients = async () => {
   return data || [];
 };
 
-export const addPatient = async (patient: any) => {
+export const addPatient = async (patient: any, currentUser?: any) => {
   if (USE_MOCK_DATA) {
     // Generate a unique ID for the new patient
     const newPatient = {
@@ -108,6 +108,18 @@ export const addPatient = async (patient: any) => {
     };
     // Add to mock data (in-memory)
     MOCK_PATIENTS.push(newPatient);
+    
+    // Log the action
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || 'N/A',
+      action: 'edit',
+      resource: `${patient.first_name} ${patient.last_name}`,
+      resource_type: 'Patient',
+      description: `Created new patient record: ${patient.first_name} ${patient.last_name} (ID: ${newPatient.id})`,
+    });
+    
     return newPatient;
   }
 
@@ -120,6 +132,20 @@ export const addPatient = async (patient: any) => {
     console.error('Error adding patient:', error);
     return null;
   }
+
+  // Log the action
+  if (data?.[0]) {
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || 'N/A',
+      action: 'edit',
+      resource: `${patient.first_name} ${patient.last_name}`,
+      resource_type: 'Patient',
+      description: `Created new patient record: ${patient.first_name} ${patient.last_name} (ID: ${data[0].id})`,
+    });
+  }
+
   return data?.[0] || null;
 };
 
@@ -187,12 +213,12 @@ export const fetchTestResults = async () => {
   return data || [];
 };
 
-export const addTestResult = async (result: any) => {
+export const addTestResult = async (result: any, currentUser?: any) => {
   if (USE_MOCK_DATA) {
     const newResult = {
       id: `result-${Date.now()}`,
       ...result,
-      status: result.status || 'pending', // Default to 'pending' if not provided
+      status: result.status || 'pending',
       date_created: new Date().toISOString().split('T')[0],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -200,7 +226,7 @@ export const addTestResult = async (result: any) => {
     MOCK_TEST_RESULTS.push(newResult);
 
     // Automatically create billing entry for the test
-    const testCost = TEST_PRICING[result.section]?.[result.test_name] || 300; // Default cost if not found
+    const testCost = TEST_PRICING[result.section]?.[result.test_name] || 300;
     const billingEntry = {
       id: `billing-${Date.now()}`,
       patient_name: result.patient_name,
@@ -215,6 +241,17 @@ export const addTestResult = async (result: any) => {
     };
     MOCK_BILLING.push(billingEntry);
 
+    // Log the action
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || 'N/A',
+      action: 'edit',
+      resource: `${result.test_name} - ${result.patient_name}`,
+      resource_type: 'Test Result',
+      description: `Created test result: ${result.test_name} for patient ${result.patient_name} in section ${result.section}. Auto-billed: ₱${testCost.toFixed(2)}`,
+    });
+
     return newResult;
   }
 
@@ -227,18 +264,54 @@ export const addTestResult = async (result: any) => {
     console.error('Error adding test result:', error);
     return null;
   }
+
+  if (data?.[0]) {
+    // Log the action
+    const testCost = TEST_PRICING[result.section]?.[result.test_name] || 300;
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || 'N/A',
+      action: 'edit',
+      resource: `${result.test_name} - ${result.patient_name}`,
+      resource_type: 'Test Result',
+      description: `Created test result: ${result.test_name} for patient ${result.patient_name} in section ${result.section}. Auto-billed: ₱${testCost.toFixed(2)}`,
+    });
+  }
+
   return data?.[0] || null;
 };
 
-export const updateTestResult = async (id: string, result: any) => {
+export const updateTestResult = async (id: string, result: any, currentUser?: any) => {
   if (USE_MOCK_DATA) {
     const index = MOCK_TEST_RESULTS.findIndex(r => r.id === id);
     if (index !== -1) {
+      const oldStatus = MOCK_TEST_RESULTS[index].status;
       MOCK_TEST_RESULTS[index] = { ...MOCK_TEST_RESULTS[index], ...result, updated_at: new Date().toISOString() };
+      
+      // Log status change if it occurred
+      if (result.status && result.status !== oldStatus) {
+        await logActivity({
+          user_id: currentUser?.id,
+          user_name: currentUser?.full_name || 'Unknown User',
+          encryption_key: currentUser?.encryption_key || 'N/A',
+          action: 'edit',
+          resource: `${MOCK_TEST_RESULTS[index].test_name} - ${MOCK_TEST_RESULTS[index].patient_name}`,
+          resource_type: 'Test Result',
+          description: `Updated test status: ${oldStatus.toUpperCase()} → ${result.status.toUpperCase()} for ${MOCK_TEST_RESULTS[index].test_name}`,
+        });
+      }
+      
       return MOCK_TEST_RESULTS[index];
     }
     return null;
   }
+
+  const { data: oldData } = await supabase
+    .from('test_results')
+    .select('*')
+    .eq('id', id)
+    .single();
 
   const { data, error } = await supabase
     .from('test_results')
@@ -250,6 +323,20 @@ export const updateTestResult = async (id: string, result: any) => {
     console.error('Error updating test result:', error);
     return null;
   }
+
+  // Log status change if it occurred
+  if (data?.[0] && result.status && result.status !== oldData?.status) {
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || 'N/A',
+      action: 'edit',
+      resource: `${data[0].test_name} - ${data[0].patient_name}`,
+      resource_type: 'Test Result',
+      description: `Updated test status: ${oldData?.status.toUpperCase()} → ${result.status.toUpperCase()} for ${data[0].test_name}`,
+    });
+  }
+
   return data?.[0] || null;
 };
 
@@ -294,15 +381,34 @@ export const fetchBilling = async () => {
   return data || [];
 };
 
-export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid') => {
+export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid', currentUser?: any) => {
   if (USE_MOCK_DATA) {
     const index = MOCK_BILLING.findIndex(b => b.id === id);
     if (index !== -1) {
+      const oldStatus = MOCK_BILLING[index].status;
       MOCK_BILLING[index] = { ...MOCK_BILLING[index], status, updated_at: new Date().toISOString() };
+      
+      // Log the action
+      await logActivity({
+        user_id: currentUser?.id,
+        user_name: currentUser?.full_name || 'Unknown User',
+        encryption_key: currentUser?.encryption_key || 'N/A',
+        action: 'edit',
+        resource: `${MOCK_BILLING[index].test_name} - ${MOCK_BILLING[index].patient_name}`,
+        resource_type: 'Billing',
+        description: `Updated billing status: ${oldStatus.toUpperCase()} → ${status.toUpperCase()} for ${MOCK_BILLING[index].test_name}. Amount: ₱${MOCK_BILLING[index].amount.toFixed(2)}`,
+      });
+      
       return MOCK_BILLING[index];
     }
     return null;
   }
+
+  const { data: oldData } = await supabase
+    .from('billing')
+    .select('*')
+    .eq('id', id)
+    .single();
 
   const { data, error } = await supabase
     .from('billing')
@@ -314,6 +420,20 @@ export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid')
     console.error('Error updating billing status:', error);
     return null;
   }
+
+  // Log the action
+  if (data?.[0]) {
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || 'N/A',
+      action: 'edit',
+      resource: `${data[0].test_name} - ${data[0].patient_name}`,
+      resource_type: 'Billing',
+      description: `Updated billing status: ${oldData?.status.toUpperCase()} → ${status.toUpperCase()} for ${data[0].test_name}. Amount: ₱${data[0].amount.toFixed(2)}`,
+    });
+  }
+
   return data?.[0] || null;
 };
 

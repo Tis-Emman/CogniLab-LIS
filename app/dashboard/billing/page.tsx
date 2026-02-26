@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { CheckCircle, Clock, TrendingUp, AlertCircle, Download, FileText } from 'lucide-react';
 import { fetchBilling, updateBillingStatus, deleteBilling, logActivity } from '@/lib/database';
+import { useAuth } from '@/lib/authContext';
 
 interface BillingRecord {
   id: string;
@@ -25,6 +26,7 @@ interface BillingRecord {
 }
 
 export default function BillingPage() {
+  const { user } = useAuth();
   const [billings, setBillings] = useState<BillingRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -82,28 +84,22 @@ export default function BillingPage() {
   };
 
   const handlePaymentStatusChange = async (id: string, newStatus: 'paid' | 'unpaid') => {
-    await updateBillingStatus(id, newStatus);
-    await logActivity({
-      user_name: 'Current User',
-      encryption_key: 'ENC_KEY_TEMP',
-      action: 'edit',
-      resource: `Billing: ${id}`,
-      resource_type: 'Billing Record',
-      description: `Updated billing status to ${newStatus}`,
-    });
+    await updateBillingStatus(id, newStatus, user);
     await loadBilling();
   };
 
   const handleDeleteBilling = async (id: string) => {
     if (confirm('Delete this billing record?')) {
+      const billing = billings.find(b => b.id === id);
       await deleteBilling(id);
       await logActivity({
-        user_name: 'Current User',
-        encryption_key: 'ENC_KEY_TEMP',
+        user_id: user?.id,
+        user_name: user?.full_name || 'Unknown User',
+        encryption_key: user?.encryption_key || 'N/A',
         action: 'delete',
-        resource: `Billing: ${id}`,
-        resource_type: 'Billing Record',
-        description: 'Deleted billing record',
+        resource: `${billing?.description || 'Billing Record'}`,
+        resource_type: 'Billing',
+        description: `Deleted billing record for ${billing?.patient_name || 'Unknown Patient'}: ${billing?.description || 'N/A'}. Amount: ₱${billing?.amount.toFixed(2) || '0.00'}`,
       });
       await loadBilling();
     }

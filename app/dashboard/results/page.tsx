@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Plus, CheckCircle, Clock, AlertCircle, ArrowRight, Edit2, Loader } from 'lucide-react';
 import { fetchTestResults, addTestResult, updateTestResult, deleteTestResult } from '@/lib/database';
 import { MOCK_PATIENTS } from '@/lib/mockData';
+import { useAuth } from '@/lib/authContext';
 
 interface TestResult {
   id: string;
@@ -38,6 +39,7 @@ const TESTS_BY_SECTION: Record<string, { name: string; referenceRange: string; u
   };
 
 export default function TestResultsPage() {
+  const { user } = useAuth();
   const [selectedSection, setSelectedSection] = useState<string>('');
   const [selectedTest, setSelectedTest] = useState<string>('');
   const [patientName, setPatientName] = useState('');
@@ -121,7 +123,7 @@ export default function TestResultsPage() {
     if (currentIndex < statusFlow.length - 1) {
       setUpdatingStatusId(resultId);
       const nextStatus = statusFlow[currentIndex + 1];
-      await updateTestResult(resultId, { status: nextStatus });
+      await updateTestResult(resultId, { status: nextStatus }, user);
       
       // Update state optimistically without reloading
       setResults(results.map(r => r.id === resultId ? { ...r, status: nextStatus as TestResult['status'] } : r));
@@ -179,7 +181,7 @@ export default function TestResultsPage() {
           result_value: resultValue,
           reference_range: testDetails.referenceRange,
           unit: testDetails.unit,
-        });
+        }, user);
       } else {
         await addTestResult({
           patient_name: patientName,
@@ -188,7 +190,7 @@ export default function TestResultsPage() {
           result_value: resultValue,
           reference_range: testDetails.referenceRange,
           unit: testDetails.unit,
-        });
+        }, user);
       }
       await loadResults();
       resetForm();

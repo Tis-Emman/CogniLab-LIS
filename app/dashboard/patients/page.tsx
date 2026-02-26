@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Plus, User, ArrowRight, Trash2, Loader } from 'lucide-react';
 import { fetchPatients, addPatient, updatePatient, deletePatient, logActivity } from '@/lib/database';
+import { useAuth } from '@/lib/authContext';
 
 interface Patient {
   id: string;
@@ -27,6 +28,7 @@ interface Patient {
 }
 
 export default function PatientsPage() {
+  const { user } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,15 +166,7 @@ export default function PatientsPage() {
         medical_history: formData.medical_history,
         medications: formData.medications,
         allergy: formData.allergy,
-      });
-      await logActivity({
-        user_name: 'Current User',
-        encryption_key: 'ENC_KEY_TEMP',
-        action: 'edit',
-        resource: `Patient: ${formData.first_name} ${formData.last_name}`,
-        resource_type: 'Patient Record',
-        description: `Registered new patient: ${formData.first_name} ${formData.last_name}`,
-      });
+      }, user);
       await loadPatients();
       setFormData({
         patient_id_no: '',
