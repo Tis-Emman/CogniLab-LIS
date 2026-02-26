@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Laboratory Information System - LIS",
-  description: "Professional Laboratory Information System for Clinic Management",
+  title: "CogniLab - KRRAX-JAM Inc Laboratory Information System",
+  description: "Professional Laboratory Information System for KRRAX-JAM Inc Management",
 };
 
 export default function RootLayout({

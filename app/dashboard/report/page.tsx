@@ -131,7 +131,7 @@ export default function PrintReportPage() {
 
   const handlePrint = useReactToPrint({
     contentRef: reportContentRef,
-    documentTitle: 'Laboratory Report',
+    documentTitle: 'CogniLab Laboratory Report',
   });
 
   const togglePreview = () => {
@@ -159,7 +159,7 @@ export default function PrintReportPage() {
         animationDelay: '0.1s',
         animationFillMode: 'both'
       }}>
-        <h1 className="text-3xl font-bold text-gray-800">Laboratory Report Generation</h1>
+        <h1 className="text-3xl font-bold text-gray-800">CogniLab Laboratory Report Generation</h1>
         <p className="text-gray-600 text-sm mt-1">Generate and print professional laboratory reports</p>
       </div>
 
@@ -307,8 +307,8 @@ export default function PrintReportPage() {
               <div className="p-12 bg-white" style={{ fontSize: '12pt', fontFamily: 'Arial, sans-serif' }}>
                 {/* Header */}
                 <div className="text-center border-b-2 border-gray-800 pb-6 mb-6">
-                  <h1 className="text-2xl font-bold text-gray-800">CogniLab Lab Information System</h1>
-                  <p className="text-gray-600 text-lg font-semibold">Clinic Laboratory Report</p>
+                  <h1 className="text-2xl font-bold text-gray-800">CogniLab - KRRAX-JAM Inc</h1>
+                  <p className="text-gray-600 text-lg font-semibold">Laboratory Report</p>
                   <p className="text-gray-700 text-sm font-medium mt-1">Professional Medical Testing Services</p>
                 </div>
 

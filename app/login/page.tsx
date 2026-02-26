@@ -19,7 +19,7 @@ export default function LoginPage() {
 
   // Load remembered email from localStorage on mount
   useEffect(() => {
-    const savedEmail = localStorage.getItem('lis_remembered_email');
+    const savedEmail = localStorage.getItem('cognilab_remembered_email');
     if (savedEmail) {
       setEmail(savedEmail);
       setRememberMe(true);
@@ -44,9 +44,9 @@ export default function LoginPage() {
       
       // Save email if Remember Me is checked
       if (rememberMe) {
-        localStorage.setItem('lis_remembered_email', email);
+        localStorage.setItem('cognilab_remembered_email', email);
       } else {
-        localStorage.removeItem('lis_remembered_email');
+        localStorage.removeItem('cognilab_remembered_email');
       }
       
       router.push('/dashboard');
@@ -88,7 +88,7 @@ export default function LoginPage() {
           <div className="bg-white rounded-2xl p-16 shadow-2xl">
             <Image
               src="/images/logo.png"
-              alt="LIS Logo"
+              alt="CogniLab Logo"
               width={400}
               height={400}
               priority
@@ -104,7 +104,7 @@ export default function LoginPage() {
           {/* Form Header */}
           <div className="mb-8">
             <h2 className="text-3xl font-bold text-gray-800 mb-2">Welcome Back</h2>
-            <p className="text-gray-600">Sign in to your LIS account</p>
+            <p className="text-gray-600">Sign in to your CogniLab account</p>
           </div>
 
           {/* Error Alert */}
@@ -123,7 +123,7 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="your.email@lis.com"
+                placeholder="your.email@cognilab.com"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                 required
                 disabled={loading}
@@ -202,7 +202,7 @@ export default function LoginPage() {
 
           {/* Security Message */}
           <p className="text-xs text-gray-600 text-center mt-8 pt-6 border-t border-gray-200">
-            🔒 This Laboratory Information System uses encrypted authentication to ensure secure access and data protection.
+            🔒 This Laboratory Information System uses encrypted authentication to ensure secure access and data protection. © 2026 KRRAX-JAM Inc
           </p>
         </div>
       </div>

@@ -123,9 +123,9 @@ export default function Dashboard() {
         animationDelay: '0.1s',
         animationFillMode: 'both'
       }}>
-        <h1 className="text-3xl font-bold mb-2">Welcome to LIS</h1>
+        <h1 className="text-3xl font-bold mb-2">Welcome to CogniLab</h1>
         <p className="text-[#CBDED3]">
-          Manage laboratory tests, patients, and billing efficiently. Ensure quality care with secure data management.
+          Manage laboratory tests, patients, and billing for KRRAX-JAM Inc. Ensure quality care with secure data management.
         </p>
       </div>
 

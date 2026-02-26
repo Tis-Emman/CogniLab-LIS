@@ -46,7 +46,7 @@ export default function DashboardLayout({
         <div className="bg-white border-b border-gray-200 px-8 py-4 shadow-sm flex-shrink-0">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-800">
-              Laboratory Information System
+              CogniLab - KRRAX-JAM Inc
             </h2>
             <div className="flex items-center gap-4">
               <div className="text-right">

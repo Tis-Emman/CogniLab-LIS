@@ -1,6 +1,6 @@
 /**
- * Laboratory Information System Configuration
- * Contains all static configurations for the LIS application
+ * CogniLab - KRRAX-JAM Inc Laboratory Information System Configuration
+ * Contains all static configurations for the CogniLab application
  */
 
 export const LAB_SECTIONS = [

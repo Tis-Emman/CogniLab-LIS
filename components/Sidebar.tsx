@@ -72,7 +72,7 @@ export default function Sidebar() {
               </div>
               {isOpen && (
                 <div>
-                  <h1 className="font-bold text-sm">LIS</h1>
+                  <h1 className="font-bold text-sm">CogniLab</h1>
                   <p className="text-xs text-[#CBDED3]">System</p>
                 </div>
               )}
