@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Plus, CheckCircle, Clock, AlertCircle, ArrowRight, Edit2, Loader } from 'lucide-react';
-import { fetchTestResults, addTestResult, updateTestResult, deleteTestResult, fetchPatients } from '@/lib/database';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, CheckCircle, Clock, AlertCircle, ArrowRight, Edit2, Loader, Printer, DollarSign, CreditCard } from 'lucide-react';
+import { fetchTestResults, addTestResult, updateTestResult, deleteTestResult, fetchPatients, fetchBilling, getAbnormalStatus, getTestPrice } from '@/lib/database';
+import { TEST_REFERENCE_RANGES } from '@/lib/mockData';
 import { useAuth } from '@/lib/authContext';
 
 interface TestResult {
@@ -15,6 +16,9 @@ interface TestResult {
   unit: string;
   status: 'pending' | 'encoding' | 'for_verification' | 'approved' | 'released';
   date_created: string;
+  price?: number;
+  paymentStatus?: 'paid' | 'unpaid';
+  abnormal?: 'normal' | 'high' | 'low';
 }
 
 const LAB_SECTIONS = [
@@ -50,6 +54,9 @@ export default function TestResultsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [patients, setPatients] = useState<any[]>([]);
+  const [billings, setBillings] = useState<any[]>([]);
+  const [printResult, setPrintResult] = useState<TestResult | null>(null);
+  const printRef = useRef<HTMLDivElement>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -118,6 +125,21 @@ export default function TestResultsPage() {
     return labels[status] || status;
   };
 
+  const getAbnormalIndicator = (status: string | undefined) => {
+    if (status === 'high') return { symbol: '↑', color: 'text-red-600', label: 'HIGH' };
+    if (status === 'low') return { symbol: '↓', color: 'text-blue-600', label: 'LOW' };
+    return { symbol: '✓', color: 'text-green-600', label: 'NORMAL' };
+  };
+
+  const handlePrint = (result: TestResult) => {
+    setPrintResult(result);
+    setTimeout(() => {
+      if (printRef.current) {
+        window.print();
+      }
+    }, 100);
+  };
+
   const moveToNextStatus = async (resultId: string, currentStatus: string) => {
     const currentIndex = statusFlow.indexOf(currentStatus as any);
     if (currentIndex < statusFlow.length - 1) {
@@ -136,11 +158,17 @@ export default function TestResultsPage() {
   useEffect(() => {
     loadResults();
     loadPatients();
+    loadBillings();
   }, []);
 
   const loadPatients = async () => {
     const data = await fetchPatients();
     setPatients(data);
+  };
+
+  const loadBillings = async () => {
+    const data = await fetchBilling();
+    setBillings(data);
   };
 
   const loadResults = async () => {
@@ -480,57 +508,185 @@ export default function TestResultsPage() {
                 <th className="text-left py-4 px-8 font-semibold text-gray-700">Lab Section</th>
                 <th className="text-left py-4 px-8 font-semibold text-gray-700">Test Name</th>
                 <th className="text-left py-4 px-8 font-semibold text-gray-700">Result</th>
-                <th className="text-left py-4 px-8 font-semibold text-gray-700">Reference</th>
-                <th className="text-left py-4 px-8 font-semibold text-gray-700">Date</th>
                 <th className="text-left py-4 px-8 font-semibold text-gray-700">Status</th>
+                <th className="text-left py-4 px-8 font-semibold text-gray-700">Price</th>
+                <th className="text-left py-4 px-8 font-semibold text-gray-700">Payment</th>
                 <th className="text-left py-4 px-8 font-semibold text-gray-700">Action</th>
               </tr>
             </thead>
             <tbody>
-              {results.map((result) => (
-                <tr
-                  key={result.id}
-                  className="border-b border-gray-100 hover:bg-[#F0F4F1] transition"
-                >
-                  <td className="py-4 px-8 font-medium text-gray-800">{result.patient_name}</td>
-                  <td className="py-4 px-8 text-gray-600">{result.section}</td>
-                  <td className="py-4 px-8 text-gray-600">{result.test_name}</td>
-                  <td className="py-4 px-8 font-bold text-[#3B6255]">
-                    {result.result_value} {result.unit}
-                  </td>
-                  <td className="py-4 px-8 text-gray-600">{result.reference_range}</td>
-                  <td className="py-4 px-8 text-gray-600">{new Date(result.date_created).toLocaleDateString()}</td>
-                  <td className="py-4 px-8">
-                    <div className="flex flex-col gap-2">
+              {results.map((result) => {
+                const price = getTestPrice(result.test_name, result.section);
+                const billing = billings.find(b => 
+                  b.test_name === result.test_name && 
+                  b.patient_name === result.patient_name
+                );
+                const abnormal = getAbnormalStatus(result.result_value, result.test_name, result.section);
+                const indicator = getAbnormalIndicator(abnormal);
+                
+                return (
+                  <tr
+                    key={result.id}
+                    className="border-b border-gray-100 hover:bg-[#F0F4F1] transition"
+                  >
+                    <td className="py-4 px-8 font-medium text-gray-800">{result.patient_name}</td>
+                    <td className="py-4 px-8 text-gray-600">{result.section}</td>
+                    <td className="py-4 px-8 text-gray-600">{result.test_name}</td>
+                    <td className="py-4 px-8 font-bold text-[#3B6255]">
+                      <div className="flex items-center gap-2">
+                        {result.result_value} {result.unit}
+                        <span className={`${indicator.color} font-bold text-lg`}>{indicator.symbol}</span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-8">
                       <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(result.status)}`}>
                         {getStatusLabel(result.status)}
                       </span>
-                      {result.status !== 'released' && (
-                        <button
-                          onClick={() => moveToNextStatus(result.id, result.status)}
-                          disabled={updatingStatusId === result.id}
-                          className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-xs hover:underline disabled:opacity-50 transition"
-                        >
-                          {updatingStatusId === result.id ? 'Updating...' : 'Next ➜'}
-                        </button>
+                    </td>
+                    <td className="py-4 px-8 font-semibold text-gray-800">
+                      {price ? `₱${price}` : 'N/A'}
+                    </td>
+                    <td className="py-4 px-8">
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 w-fit ${
+                        billing?.status === 'paid' 
+                          ? 'bg-green-100 text-green-800' 
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {billing?.status === 'paid' ? (
+                          <>✓ Paid</>
+                        ) : (
+                          <>⏳ Unpaid</>
+                        )}
+                      </span>
+                    </td>
+                    <td className="py-4 px-8 flex gap-2">
+                      {result.status === 'released' && (
+                        <>
+                          <button
+                            onClick={() => handlePrint(result)}
+                            className="text-blue-600 hover:text-blue-800 font-semibold text-sm flex items-center gap-1"
+                            title="Print Result"
+                          >
+                            <Printer className="w-4 h-4" />
+                            Print
+                          </button>
+                          <button
+                            onClick={() => handleEdit(result)}
+                            className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-sm flex items-center gap-1"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                            Edit
+                          </button>
+                        </>
                       )}
-                    </div>
-                  </td>
-                  <td className="py-4 px-8 flex gap-2">
-                    <button
-                      onClick={() => handleEdit(result)}
-                      className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-sm flex items-center gap-1"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                      Edit
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Print Report - Hidden but printable */}
+      {printResult && (() => {
+        const billing = billings.find(b => 
+          b.test_name === printResult.test_name && 
+          b.patient_name === printResult.patient_name
+        );
+        const price = getTestPrice(printResult.test_name, printResult.section);
+        const abnormalStatus = getAbnormalStatus(printResult.result_value, printResult.test_name, printResult.section);
+        const statusDisplay = abnormalStatus === 'high' ? '↑ HIGH' : abnormalStatus === 'low' ? '↓ LOW' : '✓ NORMAL';
+
+        return (
+        <div ref={printRef} style={{ display: 'none' }}>
+          <div style={{
+            fontFamily: 'Arial, sans-serif',
+            padding: '40px',
+            maxWidth: '800px',
+            margin: '0 auto',
+            color: '#000',
+          }}>
+            {/* Header */}
+            <div style={{ textAlign: 'center', marginBottom: '30px', borderBottom: '2px solid #3B6255', paddingBottom: '20px' }}>
+              <h1 style={{ margin: '0 0 5px 0', fontSize: '24px', fontWeight: 'bold' }}>Laboratory Test Result</h1>
+              <p style={{ margin: '0', fontSize: '12px', color: '#666' }}>Professional Laboratory Information System</p>
+            </div>
+
+            {/* Patient Info */}
+            <div style={{ marginBottom: '30px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid #ccc', paddingBottom: '5px' }}>PATIENT INFORMATION</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', fontSize: '13px' }}>
+                <div>
+                  <p style={{ margin: '5px 0', fontSize: '12px', color: '#666' }}>Patient Name:</p>
+                  <p style={{ margin: '0', fontWeight: 'bold', fontSize: '14px' }}>{printResult.patient_name}</p>
+                </div>
+                <div>
+                  <p style={{ margin: '5px 0', fontSize: '12px', color: '#666' }}>Date of Test:</p>
+                  <p style={{ margin: '0', fontWeight: 'bold', fontSize: '14px' }}>{new Date(printResult.date_created).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Test Details */}
+            <div style={{ marginBottom: '30px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid #ccc', paddingBottom: '5px' }}>TEST RESULT</h3>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <tr>
+                  <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontWeight: 'bold' }}>Laboratory Section:</td>
+                  <td style={{ padding: '10px', borderBottom: '1px solid #ddd' }}>{printResult.section}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontWeight: 'bold' }}>Test Name:</td>
+                  <td style={{ padding: '10px', borderBottom: '1px solid #ddd' }}>{printResult.test_name}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontWeight: 'bold' }}>Result Value:</td>
+                  <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontWeight: 'bold', color: '#3B6255' }}>{printResult.result_value} {printResult.unit}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontWeight: 'bold' }}>Reference Range:</td>
+                  <td style={{ padding: '10px', borderBottom: '1px solid #ddd' }}>{printResult.reference_range}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: '10px', borderBottom: '1px solid #ddd', fontWeight: 'bold' }}>Status:</td>
+                  <td style={{ padding: '10px', borderBottom: '1px solid #ddd', backgroundColor: '#CBDED3', color: '#3B6255', fontWeight: 'bold' }}>
+                    {statusDisplay}
+                  </td>
+                </tr>
+              </table>
+            </div>
+
+            {/* Billing Information */}
+            <div style={{ marginBottom: '30px' }}>
+              <h3 style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px solid #ccc', paddingBottom: '5px' }}>BILLING INFORMATION</h3>
+              <div style={{ fontSize: '13px' }}>
+                <div style={{ padding: '10px', borderBottom: '1px solid #ddd', display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontWeight: 'bold' }}>Test Price:</span>
+                  <span>{price ? `₱${price.toFixed(2)}` : 'N/A'}</span>
+                </div>
+                <div style={{ padding: '10px', borderBottom: '1px solid #ddd', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: billing?.status === 'paid' ? 'green' : 'orange' }}>
+                  <span>Payment Status:</span>
+                  <span>{billing?.status === 'paid' ? '✓ PAID' : '⏳ UNPAID'}</span>
+                </div>
+                {billing?.status === 'paid' && billing?.or_number && (
+                  <div style={{ padding: '10px', borderBottom: '1px solid #ddd', display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontWeight: 'bold' }}>OR Number:</span>
+                    <span style={{ fontFamily: 'monospace' }}>{billing.or_number}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid #ccc', textAlign: 'center', fontSize: '11px', color: '#666' }}>
+              <p style={{ margin: '5px 0' }}>This is an official test result from the Laboratory Information System</p>
+              <p style={{ margin: '5px 0' }}>Report Generated: {new Date().toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
     </div>
   );
 }

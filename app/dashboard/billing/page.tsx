@@ -85,6 +85,15 @@ export default function BillingPage() {
 
   const handlePaymentStatusChange = async (id: string, newStatus: 'paid' | 'unpaid') => {
     await updateBillingStatus(id, newStatus, user);
+    await logActivity({
+      user_id: user?.id,
+      user_name: user?.full_name || 'Unknown User',
+      encryption_key: user?.encryption_key || 'N/A',
+      action: 'edit',
+      resource: `Billing Status Updated`,
+      resource_type: 'Billing',
+      description: `Changed billing status to ${newStatus.toUpperCase()}`,
+    });
     await loadBilling();
   };
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, User, ArrowRight, Trash2, Loader } from 'lucide-react';
-import { fetchPatients, addPatient, updatePatient, deletePatient, logActivity } from '@/lib/database';
+import { fetchPatients, addPatient, updatePatient, deletePatient } from '@/lib/database';
 import { useAuth } from '@/lib/authContext';
 
 interface Patient {
@@ -198,14 +198,6 @@ export default function PatientsPage() {
   const handleDelete = async (id: string) => {
     if (confirm('Are you sure you want to delete this patient?')) {
       await deletePatient(id);
-      await logActivity({
-        user_name: 'Current User',
-        encryption_key: 'ENC_KEY_TEMP',
-        action: 'delete',
-        resource: 'Patient Record',
-        resource_type: 'Patient Record',
-        description: 'Deleted patient record',
-      });
       await loadPatients();
     }
   };

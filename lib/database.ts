@@ -1,5 +1,5 @@
 import { supabase } from './supabaseClient';
-import { MOCK_USERS, MOCK_PATIENTS, MOCK_TEST_RESULTS, MOCK_BILLING, MOCK_AUDIT_LOGS, TEST_PRICING } from './mockData';
+import { MOCK_USERS, MOCK_PATIENTS, MOCK_TEST_RESULTS, MOCK_BILLING, MOCK_AUDIT_LOGS, TEST_PRICING, TEST_REFERENCE_RANGES } from './mockData';
 
 const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 
@@ -109,15 +109,25 @@ export const addPatient = async (patient: any, currentUser?: any) => {
     // Add to mock data (in-memory)
     MOCK_PATIENTS.push(newPatient);
     
+    // Create billing record for patient registration
+    const patientName = `${patient.first_name} ${patient.last_name}`;
+    await addBilling({
+      patient_name: patientName,
+      test_name: 'Patient Registration/Consultation',
+      section: 'REGISTRATION',
+      amount: 150,
+      description: `Initial consultation fee for ${patientName}`,
+    });
+    
     // Log the action
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
       encryption_key: currentUser?.encryption_key || 'N/A',
       action: 'edit',
-      resource: `${patient.first_name} ${patient.last_name}`,
+      resource: `${patient.patient_id_no} - ${patient.first_name} ${patient.last_name}`,
       resource_type: 'Patient',
-      description: `Created new patient record: ${patient.first_name} ${patient.last_name} (ID: ${newPatient.id})`,
+      description: `Created new patient record: ${patient.first_name} ${patient.last_name} (Patient ID: ${patient.patient_id_no})`,
     });
     
     return newPatient;
@@ -133,16 +143,26 @@ export const addPatient = async (patient: any, currentUser?: any) => {
     return null;
   }
 
-  // Log the action
+  // Create billing record for patient registration
   if (data?.[0]) {
+    const patientName = `${patient.first_name} ${patient.last_name}`;
+    await addBilling({
+      patient_name: patientName,
+      test_name: 'Patient Registration/Consultation',
+      section: 'REGISTRATION',
+      amount: 150,
+      description: `Initial consultation fee for ${patientName}`,
+    });
+    
+    // Log the action
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
       encryption_key: currentUser?.encryption_key || 'N/A',
       action: 'edit',
-      resource: `${patient.first_name} ${patient.last_name}`,
+      resource: `${patient.patient_id_no} - ${patient.first_name} ${patient.last_name}`,
       resource_type: 'Patient',
-      description: `Created new patient record: ${patient.first_name} ${patient.last_name} (ID: ${data[0].id})`,
+      description: `Created new patient record: ${patient.first_name} ${patient.last_name} (Patient ID: ${patient.patient_id_no})`,
     });
   }
 
@@ -169,6 +189,18 @@ export const updatePatient = async (id: string, patient: any) => {
     console.error('Error updating patient:', error);
     return null;
   }
+  
+  if (data?.[0]) {
+    await logActivity({
+      user_name: 'Current User',
+      encryption_key: 'ENC_KEY_TEMP',
+      action: 'edit',
+      resource: `${data[0].patient_id_no} - ${data[0].first_name} ${data[0].last_name}`,
+      resource_type: 'Patient',
+      description: `Updated patient record: ${data[0].first_name} ${data[0].last_name} (Patient ID: ${data[0].patient_id_no})`,
+    });
+  }
+  
   return data?.[0] || null;
 };
 
@@ -176,11 +208,29 @@ export const deletePatient = async (id: string) => {
   if (USE_MOCK_DATA) {
     const index = MOCK_PATIENTS.findIndex(p => p.id === id);
     if (index !== -1) {
+      const deletedPatient = MOCK_PATIENTS[index];
       MOCK_PATIENTS.splice(index, 1);
+      
+      await logActivity({
+        user_name: 'Current User',
+        encryption_key: 'ENC_KEY_TEMP',
+        action: 'delete',
+        resource: `${deletedPatient.patient_id_no} - ${deletedPatient.first_name} ${deletedPatient.last_name}`,
+        resource_type: 'Patient',
+        description: `Deleted patient record: ${deletedPatient.first_name} ${deletedPatient.last_name} (Patient ID: ${deletedPatient.patient_id_no})`,
+      });
+      
       return true;
     }
     return false;
   }
+
+  // Get patient data before deletion for logging
+  const { data: patientData } = await supabase
+    .from('patients')
+    .select('patient_id_no, first_name, last_name')
+    .eq('id', id)
+    .single();
 
   const { error } = await supabase
     .from('patients')
@@ -191,6 +241,18 @@ export const deletePatient = async (id: string) => {
     console.error('Error deleting patient:', error);
     return false;
   }
+  
+  if (patientData) {
+    await logActivity({
+      user_name: 'Current User',
+      encryption_key: 'ENC_KEY_TEMP',
+      action: 'delete',
+      resource: `${patientData.patient_id_no} - ${patientData.first_name} ${patientData.last_name}`,
+      resource_type: 'Patient',
+      description: `Deleted patient record: ${patientData.first_name} ${patientData.last_name} (Patient ID: ${patientData.patient_id_no})`,
+    });
+  }
+  
   return true;
 };
 
@@ -381,6 +443,51 @@ export const fetchBilling = async () => {
   return data || [];
 };
 
+export const addBilling = async (billing: {
+  patient_name: string;
+  test_name: string;
+  section: string;
+  amount: number;
+  description?: string;
+}) => {
+  if (USE_MOCK_DATA) {
+    const newBilling = {
+      id: `billing-${Date.now()}`,
+      patient_name: billing.patient_name,
+      test_name: billing.test_name,
+      section: billing.section,
+      amount: billing.amount,
+      status: 'unpaid' as const,
+      description: billing.description || `${billing.test_name} - ${billing.section}`,
+      date_created: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    MOCK_BILLING.push(newBilling);
+    return newBilling;
+  }
+
+  const { data, error } = await supabase
+    .from('billing')
+    .insert([
+      {
+        patient_name: billing.patient_name,
+        test_name: billing.test_name,
+        section: billing.section,
+        amount: billing.amount,
+        description: billing.description || `${billing.test_name} - ${billing.section}`,
+        status: 'unpaid',
+      },
+    ])
+    .select();
+
+  if (error) {
+    console.error('Error adding billing:', error);
+    return null;
+  }
+  return data?.[0] || null;
+};
+
 export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid', currentUser?: any) => {
   if (USE_MOCK_DATA) {
     const index = MOCK_BILLING.findIndex(b => b.id === id);
@@ -545,3 +652,44 @@ export const subscribeToAuditLogs = (callback: (log: any) => void) => {
     supabase.removeChannel(channel);
   };
 };
+
+// UTILITY FUNCTIONS FOR RESULTS
+export const getAbnormalStatus = (value: string | number, testName: string, section: string): 'normal' | 'high' | 'low' => {
+  const ranges = TEST_REFERENCE_RANGES[section]?.[testName];
+  if (!ranges) return 'normal';
+
+  // If it's a normal text value (Negative, Positive, etc.)
+  if (typeof value === 'string' && (value.toLowerCase() === 'negative' || value.toLowerCase() === 'no growth' || value === 'Compatible')) {
+    return 'normal';
+  }
+
+  const numValue = Number(value);
+  if (isNaN(numValue)) return 'normal';
+
+  // Check against min/max
+  if (ranges.min !== undefined && numValue < ranges.min) return 'low';
+  if (ranges.max !== undefined && numValue > ranges.max) return 'high';
+  
+  return 'normal';
+};
+
+export const getTestPrice = (testName: string, section: string): number | null => {
+  return TEST_PRICING[section]?.[testName] || null;
+};
+
+export const enrichTestResultWithBilling = (result: any, billings: any[] = []) => {
+  const price = getTestPrice(result.test_name, result.section);
+  const billing = billings.find(b => 
+    b.test_name === result.test_name && 
+    b.patient_name === result.patient_name
+  );
+  const abnormal = getAbnormalStatus(result.result_value, result.test_name, result.section);
+  
+  return {
+    ...result,
+    price,
+    paymentStatus: billing?.status || 'unpaid',
+    abnormal,
+  };
+};
+
