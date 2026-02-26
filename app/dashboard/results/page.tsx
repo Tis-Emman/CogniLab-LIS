@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, CheckCircle, Clock, AlertCircle, ArrowRight, Edit2, Loader } from 'lucide-react';
-import { fetchTestResults, addTestResult, updateTestResult, deleteTestResult } from '@/lib/database';
-import { MOCK_PATIENTS } from '@/lib/mockData';
+import { fetchTestResults, addTestResult, updateTestResult, deleteTestResult, fetchPatients } from '@/lib/database';
 import { useAuth } from '@/lib/authContext';
 
 interface TestResult {
@@ -50,6 +49,7 @@ export default function TestResultsPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [patients, setPatients] = useState<any[]>([]);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -135,7 +135,13 @@ export default function TestResultsPage() {
   // Load test results on mount
   useEffect(() => {
     loadResults();
+    loadPatients();
   }, []);
+
+  const loadPatients = async () => {
+    const data = await fetchPatients();
+    setPatients(data);
+  };
 
   const loadResults = async () => {
     setLoading(true);
@@ -295,7 +301,7 @@ export default function TestResultsPage() {
                 }`}
               >
                 <option value="">-- Select Patient --</option>
-                {MOCK_PATIENTS.map((patient) => (
+                {patients.map((patient) => (
                   <option key={patient.id} value={`${patient.first_name} ${patient.last_name}`}>
                     {patient.first_name} {patient.last_name} (ID: {patient.patient_id_no})
                   </option>
