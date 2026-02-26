@@ -3,8 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Eye, Printer, FileText } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
-import { fetchTestResults } from '@/lib/database';
-import { MOCK_PATIENTS } from '@/lib/mockData';
+import { fetchTestResults, fetchPatients } from '@/lib/database';
 
 interface ReportData {
   patientName: string;
@@ -29,10 +28,12 @@ export default function PrintReportPage() {
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [testResults, setTestResults] = useState<any[]>([]);
+  const [patients, setPatients] = useState<any[]>([]);
 
   // Load test results on mount
   useEffect(() => {
     loadTestResults();
+    loadPatients();
   }, []);
 
   // Inject animation keyframes
@@ -78,6 +79,11 @@ export default function PrintReportPage() {
     };
   }, []);
 
+  const loadPatients = async () => {
+    const data = await fetchPatients();
+    setPatients(data);
+  };
+
   const loadTestResults = async () => {
     const results = await fetchTestResults();
     setTestResults(results);
@@ -85,7 +91,7 @@ export default function PrintReportPage() {
 
   // Build report data from selected patient and their test results
   const buildReportData = (patientId: string) => {
-    const patient = MOCK_PATIENTS.find(p => p.id === patientId);
+    const patient = patients.find(p => p.id === patientId);
     if (!patient) return null;
 
     const patientFullName = `${patient.first_name} ${patient.last_name}`;
@@ -187,7 +193,7 @@ export default function PrintReportPage() {
                   className="w-full px-4 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-[#3B6255] focus:border-[#3B6255] outline-none transition text-gray-800 font-medium bg-white"
                 >
                   <option value="">-- Select a Patient --</option>
-                  {MOCK_PATIENTS.map((patient) => (
+                  {patients.map((patient) => (
                     <option key={patient.id} value={patient.id}>
                       {patient.first_name} {patient.last_name} (ID: {patient.patient_id_no})
                     </option>

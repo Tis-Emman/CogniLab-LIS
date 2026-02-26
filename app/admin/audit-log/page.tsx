@@ -84,6 +84,28 @@ export default function AuditLogPage() {
     return matchesAction && matchesSearch;
   });
 
+  // Calculate active sessions (users with login but no corresponding logout)
+  const getActiveSessions = () => {
+    const userLastAction = new Map<string, AuditLog>();
+    
+    // Find the most recent action for each user
+    logs.forEach((log) => {
+      const existing = userLastAction.get(log.user_name);
+      if (!existing || new Date(log.created_at) > new Date(existing.created_at)) {
+        userLastAction.set(log.user_name, log);
+      }
+    });
+
+    // Count users whose last action was login (not logout)
+    let activeSessions = 0;
+    userLastAction.forEach((log) => {
+      if (log.action === 'login') {
+        activeSessions++;
+      }
+    });
+    return activeSessions;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -108,6 +130,10 @@ export default function AuditLogPage() {
           <h3 className="text-xs font-semibold text-gray-700">Total Activities</h3>
           <p className="text-2xl font-bold text-green-600">{logs.length}</p>
         </div>
+        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-orange-600">
+          <h3 className="text-xs font-semibold text-gray-700">Active Sessions</h3>
+          <p className="text-2xl font-bold text-orange-600">{getActiveSessions()}</p>
+        </div>
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-blue-600">
           <h3 className="text-xs font-semibold text-gray-700">Views</h3>
           <p className="text-2xl font-bold text-blue-600">{logs.filter((l) => l.action === 'view').length}</p>
@@ -119,10 +145,6 @@ export default function AuditLogPage() {
         <div className="bg-white rounded-lg shadow p-4 border-l-4 border-green-700">
           <h3 className="text-xs font-semibold text-gray-700">Logins</h3>
           <p className="text-2xl font-bold text-green-700">{logs.filter((l) => l.action === 'login').length}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow p-4 border-l-4 border-purple-600">
-          <h3 className="text-xs font-semibold text-gray-700">Downloads</h3>
-          <p className="text-2xl font-bold text-purple-600">{logs.filter((l) => l.action === 'download').length}</p>
         </div>
       </div>
 
