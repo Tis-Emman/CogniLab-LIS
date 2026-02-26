@@ -175,43 +175,69 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signIn = async (email: string, password: string) => {
     try {
-      // MOCK MODE: Accept only authorized credentials
-      if (USE_MOCK_DATA) {
-        console.log('🎭 MOCK MODE LOGIN:', email);
-        
-        // ALL AUTHORIZED USERS CAN ACCESS THE SYSTEM
-        const authorizedCredentials = [
-          // Medtech Members
-          { email: '2410685CogniLab@gmail.com', password: 'RAlvaran685' },
-          { email: '2410584CogniLab@gmail.com', password: 'KBuenaventura584' },
-          { email: '2410390CogniLab@gmail.com', password: 'MHernandez390' },
-          { email: '2410702CogniLab@gmail.com', password: 'AGautane702' },
-          { email: '2410436CogniLab@gmail.com', password: 'ronron67' },
-          { email: '2410937CogniLab@gmail.com', password: 'RSuarez937' },
-          { email: '2410577CogniLab@gmail.com', password: 'BeiBiBoy20!' },
-          { email: '2410236Cognilab@gmail.com', password: 'Javon036' },
-          // Faculty
-          { email: 'bsmtCogniLab2026@gmail.com', password: 'BSMT2026LIS' },
-        ];
+      // HYBRID MODE: Verify credentials from mock list, fetch user data from Supabase or mock data
+      const authorizedCredentials = [
+        // Medtech Members
+        { email: '2410685CogniLab@gmail.com', password: 'RAlvaran685' },
+        { email: '2410584CogniLab@gmail.com', password: 'KBuenaventura584' },
+        { email: '2410390CogniLab@gmail.com', password: 'MHernandez390' },
+        { email: '2410702CogniLab@gmail.com', password: 'AGautane702' },
+        { email: '2410436CogniLab@gmail.com', password: 'ronron67' },
+        { email: '2410937CogniLab@gmail.com', password: 'RSuarez937' },
+        { email: '2410577CogniLab@gmail.com', password: 'BeiBiBoy20!' },
+        { email: '2410236Cognilab@gmail.com', password: 'Javon036' },
+        // Faculty
+        { email: 'bsmtCogniLab2026@gmail.com', password: 'BSMT2026LIS' },
+      ];
 
-        const isValid = authorizedCredentials.some(
-          (cred) => cred.email === email && cred.password === password
-        );
+      const isValid = authorizedCredentials.some(
+        (cred) => cred.email === email && cred.password === password
+      );
 
-        if (!isValid) {
-          throw new Error('Invalid email or password');
+      if (!isValid) {
+        throw new Error('Invalid email or password');
+      }
+
+      console.log('✓ Credentials valid, fetching user profile...');
+
+      // Fetch user from Supabase if not in mock mode
+      if (!USE_MOCK_DATA) {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (error) {
+          console.error('Database lookup error:', error);
+          throw new Error('Failed to fetch user profile');
         }
 
-        // Find the user in mock data
-        const userInMock = MOCK_USERS.find((u) => u.email === email);
-        if (!userInMock) {
+        if (data) {
+          setUser({
+            id: data.id,
+            email: data.email,
+            full_name: data.full_name,
+            role: data.role,
+            department: data.department,
+            encryption_key: data.encryption_key,
+          });
+          setAuthUser({ id: data.id, email: data.email });
+          return;
+        } else {
           throw new Error('User not found in system');
         }
-
-        setUser(userInMock);
-        setAuthUser({ id: userInMock.id, email: userInMock.email });
-        return;
       }
+
+      // Fallback to mock data if mock mode is enabled
+      const userInMock = MOCK_USERS.find((u) => u.email === email);
+      if (!userInMock) {
+        throw new Error('User not found in system');
+      }
+
+      setUser(userInMock);
+      setAuthUser({ id: userInMock.id, email: userInMock.email });
+      return;
 
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
