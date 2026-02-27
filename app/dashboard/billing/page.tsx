@@ -29,6 +29,8 @@ export default function BillingPage() {
   const { user } = useAuth();
   const [billings, setBillings] = useState<BillingRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [paymentFilter, setPaymentFilter] = useState<string>('all');
 
   // Inject animation keyframes
   useEffect(() => {
@@ -250,17 +252,48 @@ export default function BillingPage() {
         animation: 'fadeInSlideUp 0.6s ease-out 0.5s backwards'
       }}>
         <div className="px-8 py-6 border-b border-gray-200">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
             <h2 className="text-2xl font-bold text-gray-800">Billing Records ({billings.length})</h2>
-            <div className="flex gap-2">
-              <button className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition flex items-center gap-2">
-                <Download className="w-4 h-4" />
-                Export CSV
-              </button>
-              <button className="px-4 py-2 text-sm font-semibold text-white bg-[#3B6255] hover:bg-[#5A7669] rounded-lg transition flex items-center gap-2">
-                <FileText className="w-4 h-4" />
-                Generate Report
-              </button>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by patient or test..."
+                  className="w-full sm:w-64 px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                />
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <select
+                value={paymentFilter}
+                onChange={(e) => setPaymentFilter(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
+              >
+                <option value="all">All Status</option>
+                <option value="paid">Paid</option>
+                <option value="unpaid">Unpaid</option>
+              </select>
+              <div className="flex gap-2">
+                <button className="px-4 py-2 text-sm font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition flex items-center gap-2">
+                  <Download className="w-4 h-4" />
+                  Export CSV
+                </button>
+                <button className="px-4 py-2 text-sm font-semibold text-white bg-[#3B6255] hover:bg-[#5A7669] rounded-lg transition flex items-center gap-2">
+                  <FileText className="w-4 h-4" />
+                  Generate Report
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -280,7 +313,24 @@ export default function BillingPage() {
               </tr>
             </thead>
             <tbody>
-              {billings.length > 0 && billings.map((billing) => (
+              {billings.length > 0 && billings
+                .filter((billing) => {
+                  // Search filter
+                  if (searchTerm) {
+                    const search = searchTerm.toLowerCase();
+                    const patientName = (billing.patient_name || billing.patientName || '').toLowerCase();
+                    const testName = (billing.test_name || billing.testName || '').toLowerCase();
+                    if (!patientName.includes(search) && !testName.includes(search)) return false;
+                  }
+                  // Payment status filter
+                  if (paymentFilter !== 'all') {
+                    const status = billing.status || billing.paymentStatus;
+                    if (paymentFilter === 'paid' && status !== 'paid') return false;
+                    if (paymentFilter === 'unpaid' && status === 'paid') return false;
+                  }
+                  return true;
+                })
+                .map((billing) => (
                 <tr key={billing.id} className="border-b border-gray-100 hover:bg-[#F0F4F1] transition">
                   <td className="py-4 px-8 font-medium text-gray-800">{billing.patient_name || billing.patientName || ''}</td>
                   <td className="py-4 px-8 text-gray-600">{billing.test_name || billing.testName || ''}</td>

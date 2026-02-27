@@ -224,7 +224,7 @@ export const TEST_REFERENCE_RANGES: Record<string, Record<string, { min?: number
   'HISTOPATHOLOGY': {
     'Kidney Biopsy': { normal: 'Normal/Unremarkable', unit: '' },
     'Bone Biopsy': { normal: 'No evidence of malignancy or Normal hematopoiesis', unit: '' },
-    'Skin Biopsy': { normal: 'Unremarkable skin', unit: '' },
+    'Skin Biopsy': { unit: '' },
     'Liver Biopsy Fibrosis': { normal: 'F0 (No fibrosis)', unit: '' },
     'Liver Biopsy Activity': { normal: 'A0 (No inflammation)', unit: '' },
   },

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import PhoneInputMask from '@/components/PhoneInputMask';
 import { useRouter } from 'next/navigation';
 import { Plus, User, ArrowRight, Trash2, Loader, X, CheckCircle } from 'lucide-react';
 import { fetchPatients, addPatient, updatePatient, deletePatient, addTestResult } from '@/lib/database';
@@ -62,13 +63,24 @@ const TEST_DROPDOWN_OPTIONS: Record<string, string[]> = {
   'Infectious Disease Screening': ['Non-Reactive for any infectious disease', 'Reactive for HIV', 'Reactive for HBV', 'Reactive for HCV', 'Reactive for Syphilis', 'Reactive for Malaria'],
   'Culture': ['No growth', 'Growth detected'],
   'Sensitivity': ['S (Susceptible)', 'I (Intermediate)', 'R (Resistant)'],
-  'Gram Staining': ['No bacteria seen', 'Gram Positive Cocci', 'Gram Positive Bacilli', 'Gram Negative Cocci', 'Gram Negative Bacilli'],
-  'India Ink': ['Negative', 'Positive'],
-  'Wet Mount': ['Negative', 'Positive'],
+  'Gram Staining': [
+    'Negative/Normal',
+    'Positive - Gram Positive Cocci',
+    'Positive - Gram Positive Bacilli',
+    'Positive - Gram Negative Cocci',
+    'Positive - Gram Negative Bacilli',
+  ],
+  'Pus Cells (WBCs)': ['Occasional', 'Few', 'Moderate', 'Many'],
+  'India Ink': ['Positive (Encapsulated yeast cells seen)', 'Negative (No encapsulated yeast cells seen)'],
+  'Wet Mount': ['Normal/Negative', 'Abnormal'],
   'KOH Mount': ['Negative', 'Positive'],
   'Pregnancy Test (hCG)': ['Negative', 'Positive'],
   'Fecal Occult Blood Test': ['Negative', 'Positive'],
   'Fecalysis - Ova or Parasite': ['Negative', 'Positive - Ascaris', 'Positive - Hookworm', 'Positive - Trichuris'],
+  'Kidney Biopsy': ['Normal/Unremarkable', 'Active disease', 'Scarring'],
+  'Bone Biopsy': ['Normal', 'Anormal', 'Inconclusive'],
+  'Liver Biopsy Fibrosis': ['F0: No fibrosis (Healthy)', 'F1: Portal fibrosis without septa (Mild fibrosis)', 'F2: Portal fibrosis with few septa (Moderate/Significant fibrosis)', 'F3: Numerous septa without cirrhosis (Severe fibrosis)', 'F4: Cirrhosis (Advanced scarring)'],
+  'Liver Biopsy Activity': ['A0: No activity', 'A1: Minimal/mild activity', 'A2: Moderate activity', 'A3: Severe activity'],
   'Fecal Occult Blood Test (FOBT)': ['Positive', 'Negative', 'Invalid'],
   'Pregnancy Test (PT)': ['Positive', 'Negative', 'Invalid'],
   // Routine Fecalysis (FA) Component
@@ -81,6 +93,11 @@ const TEST_DROPDOWN_OPTIONS: Record<string, string[]> = {
   'UA_Bacteria_Casts_Crystals': ['None', 'Rare', 'Few', 'Many'],
 };
 
+// Custom placeholder hints for specific tests
+const TEST_PLACEHOLDER_HINTS: Record<string, string> = {
+  'Skin Biopsy': 'e.g., Unremarkable skin',
+};
+
 export default function PatientsPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -90,6 +107,20 @@ export default function PatientsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Refs for required fields
+  const patientIdRef = useRef<HTMLInputElement>(null);
+  const lastNameRef = useRef<HTMLInputElement>(null);
+  const firstNameRef = useRef<HTMLInputElement>(null);
+  const ageRef = useRef<HTMLInputElement>(null);
+  const birthdateRef = useRef<HTMLInputElement>(null);
+  const contactNoRef = useRef<HTMLInputElement>(null);
+  const municipalityRef = useRef<HTMLInputElement>(null);
+  const provinceRef = useRef<HTMLInputElement>(null);
+  const medicalHistoryRef = useRef<HTMLTextAreaElement>(null);
+  const medicationsRef = useRef<HTMLTextAreaElement>(null);
+  const allergyRef = useRef<HTMLTextAreaElement>(null);
 
   const [formData, setFormData] = useState({
     patient_id_no: '',
@@ -239,13 +270,37 @@ export default function PatientsPage() {
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
+    const refs: Record<string, React.RefObject<any>> = {
+      patient_id_no: patientIdRef,
+      last_name: lastNameRef,
+      first_name: firstNameRef,
+      age: ageRef,
+      birthdate: birthdateRef,
+      contact_no: contactNoRef,
+      municipality: municipalityRef,
+      province: provinceRef,
+      medical_history: medicalHistoryRef,
+      medications: medicationsRef,
+      allergy: allergyRef,
+    };
 
     if (!formData.patient_id_no.trim()) newErrors.patient_id_no = 'Patient ID is required';
     if (!formData.last_name.trim()) newErrors.last_name = 'Last name is required';
     if (!formData.first_name.trim()) newErrors.first_name = 'First name is required';
     if (!formData.age || parseInt(formData.age) < 1) newErrors.age = 'Valid age is required';
     if (!formData.birthdate) newErrors.birthdate = 'Birthdate is required';
-    if (!formData.contact_no.trim()) newErrors.contact_no = 'Contact number is required';
+    // Accepts (0917) 123-4567 or 09171234567 (PH mobile)
+    const phoneRaw = formData.contact_no.replace(/\D/g, '');
+    if (!formData.contact_no.trim()) {
+      newErrors.contact_no = 'Contact number is required';
+    } else if (
+      !(
+        phoneRaw.length === 11 && phoneRaw.startsWith('09') &&
+        /^09\d{9}$/.test(phoneRaw)
+      )
+    ) {
+      newErrors.contact_no = 'Enter a valid PH mobile number (e.g., 09171234567 or (0917) 123-4567)';
+    }
     if (!formData.municipality.trim()) newErrors.municipality = 'Municipality is required';
     if (!formData.province.trim()) newErrors.province = 'Province is required';
     if (!formData.medical_history.trim()) newErrors.medical_history = 'Medical history is required';
@@ -253,7 +308,18 @@ export default function PatientsPage() {
     if (!formData.allergy.trim()) newErrors.allergy = 'Allergy information is required';
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+
+    // Scroll to first error field
+    if (Object.keys(newErrors).length > 0) {
+      const firstErrorKey = Object.keys(newErrors)[0];
+      const ref = refs[firstErrorKey];
+      if (ref && ref.current) {
+        ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        ref.current.focus();
+      }
+      return false;
+    }
+    return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -620,12 +686,15 @@ export default function PatientsPage() {
                 </label>
                 <input
                   type="text"
+                  ref={patientIdRef}
                   value={formData.patient_id_no}
                   onChange={(e) => setFormData({ ...formData, patient_id_no: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                     errors.patient_id_no ? 'border-red-500 bg-red-50' : 'border-gray-300'
                   }`}
                   placeholder="e.g., PAT001"
+                  aria-invalid={!!errors.patient_id_no}
+                  aria-describedby="error-patient-id"
                 />
                 {errors.patient_id_no && <p className="text-red-500 text-sm mt-1">{errors.patient_id_no}</p>}
               </div>
@@ -639,12 +708,15 @@ export default function PatientsPage() {
                 </label>
                 <input
                   type="text"
+                  ref={lastNameRef}
                   value={formData.last_name}
                   onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                     errors.last_name ? 'border-red-500 bg-red-50' : 'border-gray-300'
                   }`}
                   placeholder="Surname"
+                  aria-invalid={!!errors.last_name}
+                  aria-describedby="error-last-name"
                 />
                 {errors.last_name && <p className="text-red-500 text-sm mt-1">{errors.last_name}</p>}
               </div>
@@ -655,12 +727,15 @@ export default function PatientsPage() {
                 </label>
                 <input
                   type="text"
+                  ref={firstNameRef}
                   value={formData.first_name}
                   onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                     errors.first_name ? 'border-red-500 bg-red-50' : 'border-gray-300'
                   }`}
                   placeholder="Given name"
+                  aria-invalid={!!errors.first_name}
+                  aria-describedby="error-first-name"
                 />
                 {errors.first_name && <p className="text-red-500 text-sm mt-1">{errors.first_name}</p>}
               </div>
@@ -687,6 +762,7 @@ export default function PatientsPage() {
                 </label>
                 <input
                   type="number"
+                  ref={ageRef}
                   value={formData.age}
                   onChange={(e) => setFormData({ ...formData, age: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
@@ -694,6 +770,8 @@ export default function PatientsPage() {
                   }`}
                   placeholder="Enter age"
                   min="1"
+                  aria-invalid={!!errors.age}
+                  aria-describedby="error-age"
                 />
                 {errors.age && <p className="text-red-500 text-sm mt-1">{errors.age}</p>}
               </div>
@@ -704,11 +782,14 @@ export default function PatientsPage() {
                 </label>
                 <input
                   type="date"
+                  ref={birthdateRef}
                   value={formData.birthdate}
                   onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
                     errors.birthdate ? 'border-red-500 bg-red-50' : 'border-gray-300'
                   }`}
+                  aria-invalid={!!errors.birthdate}
+                  aria-describedby="error-birthdate"
                 />
                 {errors.birthdate && <p className="text-red-500 text-sm mt-1">{errors.birthdate}</p>}
               </div>
@@ -734,14 +815,11 @@ export default function PatientsPage() {
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Contact No. <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="tel"
+                <PhoneInputMask
                   value={formData.contact_no}
-                  onChange={(e) => setFormData({ ...formData, contact_no: e.target.value })}
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                    errors.contact_no ? 'border-red-500 bg-red-50' : 'border-gray-300'
-                  }`}
-                  placeholder="e.g., 09171234567"
+                  onChange={(val) => setFormData({ ...formData, contact_no: val })}
+                  error={errors.contact_no}
+                  inputRef={contactNoRef}
                 />
                 {errors.contact_no && <p className="text-red-500 text-sm mt-1">{errors.contact_no}</p>}
               </div>
@@ -796,12 +874,15 @@ export default function PatientsPage() {
                   </label>
                   <input
                     type="text"
+                    ref={municipalityRef}
                     value={formData.municipality}
                     onChange={(e) => setFormData({ ...formData, municipality: e.target.value })}
                     className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                       errors.municipality ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     placeholder="e.g., Makati"
+                    aria-invalid={!!errors.municipality}
+                    aria-describedby="error-municipality"
                   />
                   {errors.municipality && <p className="text-red-500 text-sm mt-1">{errors.municipality}</p>}
                 </div>
@@ -812,12 +893,15 @@ export default function PatientsPage() {
                   </label>
                   <input
                     type="text"
+                    ref={provinceRef}
                     value={formData.province}
                     onChange={(e) => setFormData({ ...formData, province: e.target.value })}
                     className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                       errors.province ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     placeholder="e.g., NCR"
+                    aria-invalid={!!errors.province}
+                    aria-describedby="error-province"
                   />
                   {errors.province && <p className="text-red-500 text-sm mt-1">{errors.province}</p>}
                 </div>
@@ -833,6 +917,7 @@ export default function PatientsPage() {
                   Medical History <span className="text-red-500">*</span>
                 </label>
                 <textarea
+                  ref={medicalHistoryRef}
                   value={formData.medical_history}
                   onChange={(e) => setFormData({ ...formData, medical_history: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
@@ -840,6 +925,8 @@ export default function PatientsPage() {
                   }`}
                   placeholder="e.g., Hypertension, Diabetes"
                   rows={3}
+                  aria-invalid={!!errors.medical_history}
+                  aria-describedby="error-medical-history"
                 />
                 {errors.medical_history && <p className="text-red-500 text-sm mt-1">{errors.medical_history}</p>}
               </div>
@@ -849,6 +936,7 @@ export default function PatientsPage() {
                   Medications <span className="text-red-500">*</span>
                 </label>
                 <textarea
+                  ref={medicationsRef}
                   value={formData.medications}
                   onChange={(e) => setFormData({ ...formData, medications: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
@@ -856,6 +944,8 @@ export default function PatientsPage() {
                   }`}
                   placeholder="e.g., Metoprolol 50mg daily, Atorvastatin 20mg"
                   rows={3}
+                  aria-invalid={!!errors.medications}
+                  aria-describedby="error-medications"
                 />
                 {errors.medications && <p className="text-red-500 text-sm mt-1">{errors.medications}</p>}
               </div>
@@ -865,6 +955,7 @@ export default function PatientsPage() {
                   Allergy <span className="text-red-500">*</span>
                 </label>
                 <textarea
+                  ref={allergyRef}
                   value={formData.allergy}
                   onChange={(e) => setFormData({ ...formData, allergy: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
@@ -872,6 +963,8 @@ export default function PatientsPage() {
                   }`}
                   placeholder="e.g., Penicillin, None"
                   rows={2}
+                  aria-invalid={!!errors.allergy}
+                  aria-describedby="error-allergy"
                 />
                 {errors.allergy && <p className="text-red-500 text-sm mt-1">{errors.allergy}</p>}
               </div>
@@ -903,9 +996,31 @@ export default function PatientsPage() {
         animation: 'fadeInSlideUp 0.6s ease-out 0.3s backwards'
       }}>
         <div className="px-8 py-6 border-b border-gray-200">
-          <h2 className="text-2xl font-bold text-gray-800">
-            Registered Patients ({patients.length})
-          </h2>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <h2 className="text-2xl font-bold text-gray-800">
+              Registered Patients ({patients.length})
+            </h2>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by name, ID, location..."
+                className="w-full md:w-80 px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+              />
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -923,7 +1038,21 @@ export default function PatientsPage() {
               </tr>
             </thead>
             <tbody>
-              {patients.map((patient) => (
+              {patients
+                .filter((patient) => {
+                  if (!searchTerm) return true;
+                  const search = searchTerm.toLowerCase();
+                  return (
+                    patient.patient_id_no?.toLowerCase().includes(search) ||
+                    patient.first_name?.toLowerCase().includes(search) ||
+                    patient.last_name?.toLowerCase().includes(search) ||
+                    `${patient.first_name} ${patient.last_name}`.toLowerCase().includes(search) ||
+                    patient.municipality?.toLowerCase().includes(search) ||
+                    patient.province?.toLowerCase().includes(search) ||
+                    patient.contact_no?.toLowerCase().includes(search)
+                  );
+                })
+                .map((patient) => (
                 <tr
                   key={patient.id}
                   className="border-b border-gray-100 hover:bg-[#F0F4F1] transition"
@@ -1391,7 +1520,7 @@ export default function PatientsPage() {
                         </p>
                       </div>
                     </div>
-                    {testErrors.hemoglobin && <p className="text-red-500 text-sm mt-1">{testErrors.hemoglobin}</p>}v c
+                    {testErrors.hemoglobin && <p className="text-red-500 text-sm mt-1">{testErrors.hemoglobin}</p>}
                   </div>
                 )}
 
@@ -1602,7 +1731,6 @@ export default function PatientsPage() {
                           placeholder="e.g. Staphylococcus aureus"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Organism identification (e.g., Staphylococcus aureus)</p>
                       </div>
 
                       {/* Preliminary Report (Text Input) */}
@@ -1615,7 +1743,6 @@ export default function PatientsPage() {
                           placeholder="e.g. No growth after 24/48 hours"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Growth status after 24/48 hours</p>
                       </div>
 
                       {/* Final Report (Text Input) */}
@@ -1628,7 +1755,6 @@ export default function PatientsPage() {
                           placeholder="e.g. No growth after 5-7 days"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Final growth status after 5-7 days</p>
                       </div>
 
                       {/* Sensitivity (Antibiogram) (Dropdown) */}
@@ -1644,7 +1770,6 @@ export default function PatientsPage() {
                           <option value="I (Intermediate): The antibiotic may work at higher doses">I (Intermediate): The antibiotic may work at higher doses</option>
                           <option value="R (Resistant): The antibiotic will not work">R (Resistant): The antibiotic will not work</option>
                         </select>
-                        <p className="text-xs text-gray-500 mt-1">S: Susceptible | I: Intermediate | R: Resistant</p>
                       </div>
                     </div>
                   </div>
@@ -1677,7 +1802,7 @@ export default function PatientsPage() {
                           type="text"
                           value={resultValue}
                           onChange={(e) => setResultValue(e.target.value)}
-                          placeholder="Enter result value"
+                          placeholder={TEST_PLACEHOLDER_HINTS[selectedTest] || 'Enter result value'}
                           className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                             testErrors.resultValue ? 'border-red-500' : 'border-gray-300'
                           }`}

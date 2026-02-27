@@ -1,10 +1,97 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Plus, CheckCircle, Clock, AlertCircle, ArrowRight, Edit2, Loader, Printer, DollarSign, CreditCard } from 'lucide-react';
+import { Plus, CheckCircle, Clock, AlertCircle, ArrowRight, Edit2, Loader, Printer, DollarSign, CreditCard, ChevronRight, Check } from 'lucide-react';
 import { fetchTestResults, addTestResult, updateTestResult, deleteTestResult, fetchPatients, fetchBilling, getAbnormalStatus, getTestPrice } from '@/lib/database';
 import { TEST_REFERENCE_RANGES } from '@/lib/mockData';
 import { useAuth } from '@/lib/authContext';
+
+// Status Stepper Component
+const StatusStepper = ({ 
+  currentStatus, 
+  onAdvance, 
+  isUpdating 
+}: { 
+  currentStatus: string; 
+  onAdvance: () => void; 
+  isUpdating: boolean;
+}) => {
+  const steps = [
+    { key: 'pending', label: 'Pending', icon: Clock },
+    { key: 'encoding', label: 'Encoding', icon: Edit2 },
+    { key: 'for_verification', label: 'Verification', icon: AlertCircle },
+    { key: 'approved', label: 'Approved', icon: CheckCircle },
+    { key: 'released', label: 'Released', icon: Check },
+  ];
+
+  const currentIndex = steps.findIndex(s => s.key === currentStatus);
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-lg p-4 min-w-[320px]">
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-semibold text-gray-700">Status Pipeline</span>
+        {currentStatus !== 'released' && (
+          <button
+            onClick={onAdvance}
+            disabled={isUpdating}
+            className="px-3 py-1.5 bg-[#3B6255] text-white text-xs rounded-lg hover:bg-[#5A7669] transition font-semibold disabled:opacity-50 flex items-center gap-1"
+          >
+            {isUpdating ? 'Updating...' : 'Advance →'}
+          </button>
+        )}
+      </div>
+      
+      <div className="relative">
+        {/* Progress line background */}
+        <div className="absolute top-4 left-4 right-4 h-0.5 bg-gray-200 z-0"></div>
+        {/* Progress line filled */}
+        <div 
+          className="absolute top-4 left-4 h-0.5 bg-[#3B6255] z-0 transition-all duration-300"
+          style={{ width: `${(currentIndex / (steps.length - 1)) * (100 - 8)}%` }}
+        ></div>
+        
+        <div className="relative flex justify-between">
+          {steps.map((step, index) => {
+            const isCompleted = index < currentIndex;
+            const isCurrent = index === currentIndex;
+            const isUpcoming = index > currentIndex;
+            const Icon = step.icon;
+            
+            return (
+              <div key={step.key} className="flex flex-col items-center z-10">
+                <div 
+                  className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-300 ${
+                    isCompleted 
+                      ? 'bg-[#3B6255] text-white' 
+                      : isCurrent 
+                        ? 'bg-[#3B6255] text-white ring-4 ring-[#3B6255]/20 animate-pulse' 
+                        : 'bg-gray-200 text-gray-400'
+                  }`}
+                >
+                  {isCompleted ? (
+                    <Check className="w-4 h-4" />
+                  ) : (
+                    <Icon className="w-4 h-4" />
+                  )}
+                </div>
+                <span 
+                  className={`text-[10px] mt-1.5 font-medium text-center max-w-[60px] ${
+                    isCompleted || isCurrent ? 'text-[#3B6255]' : 'text-gray-400'
+                  }`}
+                >
+                  {step.label}
+                </span>
+                {isCurrent && (
+                  <span className="text-[8px] text-[#3B6255] font-bold mt-0.5">CURRENT</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 interface TestResult {
   id: string;
@@ -54,12 +141,21 @@ const TEST_DROPDOWN_OPTIONS: Record<string, string[]> = {
   'Culture': ['No growth', 'Growth detected'],
   'Sensitivity': ['S (Susceptible)', 'I (Intermediate)', 'R (Resistant)'],
   'Gram Staining': ['No bacteria seen', 'Gram Positive Cocci', 'Gram Positive Bacilli', 'Gram Negative Cocci', 'Gram Negative Bacilli'],
-  'India Ink': ['Negative', 'Positive'],
+  'India Ink': ['Positive (Encapsulated yeast cells seen)', 'Negative (No encapsulated yeast cells seen)'],
   'Wet Mount': ['Negative', 'Positive'],
   'KOH Mount': ['Negative', 'Positive'],
   'Pregnancy Test (hCG)': ['Negative', 'Positive'],
   'Fecal Occult Blood Test': ['Negative', 'Positive'],
   'Fecalysis - Ova or Parasite': ['Negative', 'Positive - Ascaris', 'Positive - Hookworm', 'Positive - Trichuris'],
+  'Kidney Biopsy': ['Normal/Unremarkable', 'Active disease', 'Scarring'],
+  'Bone Biopsy': ['Normal', 'Anormal', 'Inconclusive'],
+  'Liver Biopsy Fibrosis': ['F0: No fibrosis (Healthy)', 'F1: Portal fibrosis without septa (Mild fibrosis)', 'F2: Portal fibrosis with few septa (Moderate/Significant fibrosis)', 'F3: Numerous septa without cirrhosis (Severe fibrosis)', 'F4: Cirrhosis (Advanced scarring)'],
+  'Liver Biopsy Activity': ['A0: No activity', 'A1: Minimal/mild activity', 'A2: Moderate activity', 'A3: Severe activity'],
+};
+
+// Custom placeholder hints for specific tests
+const TEST_PLACEHOLDER_HINTS: Record<string, string> = {
+  'Skin Biopsy': 'e.g., Unremarkable skin',
 };
 
 export default function TestResultsPage() {
@@ -78,6 +174,9 @@ export default function TestResultsPage() {
   const [billings, setBillings] = useState<any[]>([]);
   const [printResult, setPrintResult] = useState<TestResult | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [expandedStepperId, setExpandedStepperId] = useState<string | null>(null);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -453,7 +552,7 @@ export default function TestResultsPage() {
                       type="text"
                       value={resultValue}
                       onChange={(e) => setResultValue(e.target.value)}
-                      placeholder="Enter result value"
+                      placeholder={TEST_PLACEHOLDER_HINTS[selectedTest] || 'Enter result value'}
                       className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                         errors.resultValue ? 'border-red-500' : 'border-gray-300'
                       }`}
@@ -523,7 +622,43 @@ export default function TestResultsPage() {
         animation: 'fadeInSlideUp 0.6s ease-out 0.5s backwards'
       }}>
         <div className="px-8 py-6 border-b border-gray-200">
-          <h2 className="text-2xl font-bold text-gray-800">Test Results ({results.length})</h2>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <h2 className="text-2xl font-bold text-gray-800">Test Results ({results.length})</h2>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search by patient or test..."
+                  className="w-full sm:w-64 px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                />
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                {searchTerm && (
+                  <button
+                    onClick={() => setSearchTerm('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
+              >
+                <option value="all">All Status</option>
+                <option value="pending">Pending</option>
+                <option value="encoding">Encoding</option>
+                <option value="for_verification">For Verification</option>
+                <option value="approved">Approved</option>
+                <option value="released">Released</option>
+              </select>
+            </div>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -541,7 +676,22 @@ export default function TestResultsPage() {
               </tr>
             </thead>
             <tbody>
-              {results.map((result) => {
+              {results
+                .filter((result) => {
+                  // Search filter
+                  if (searchTerm) {
+                    const search = searchTerm.toLowerCase();
+                    const matchesSearch = 
+                      result.patient_name?.toLowerCase().includes(search) ||
+                      result.test_name?.toLowerCase().includes(search) ||
+                      result.section?.toLowerCase().includes(search);
+                    if (!matchesSearch) return false;
+                  }
+                  // Status filter
+                  if (statusFilter !== 'all' && result.status !== statusFilter) return false;
+                  return true;
+                })
+                .map((result) => {
                 const price = getTestPrice(result.test_name, result.section);
                 const billing = billings.find(b => 
                   b.test_name === result.test_name && 
@@ -564,10 +714,15 @@ export default function TestResultsPage() {
                         <span className={`${indicator.color} font-bold text-lg`}>{indicator.symbol}</span>
                       </div>
                     </td>
-                    <td className="py-4 px-8">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(result.status)}`}>
-                        {getStatusLabel(result.status)}
-                      </span>
+                    <td className="py-4 px-8 relative">
+                      <button
+                        onClick={() => setExpandedStepperId(expandedStepperId === result.id ? null : result.id)}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(result.status)} flex items-center gap-1 cursor-pointer hover:opacity-80 transition`}
+                        title="Click to view status pipeline"
+                      >
+                        {updatingStatusId === result.id ? 'Updating...' : getStatusLabel(result.status)}
+                        <ChevronRight className={`w-3 h-3 transition-transform ${expandedStepperId === result.id ? 'rotate-90' : ''}`} />
+                      </button>
                     </td>
                     <td className="py-4 px-8 font-semibold text-gray-800">
                       {price ? `₱${price}` : ''}
@@ -586,24 +741,23 @@ export default function TestResultsPage() {
                       </span>
                     </td>
                     <td className="py-4 px-8 flex gap-2">
+                      <button
+                        onClick={() => handleEdit(result)}
+                        className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-sm flex items-center gap-1"
+                        title="Edit Result"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                        Edit
+                      </button>
                       {result.status === 'released' && (
-                        <>
-                          <button
-                            onClick={() => handlePrint(result)}
-                            className="text-blue-600 hover:text-blue-800 font-semibold text-sm flex items-center gap-1"
-                            title="Print Result"
-                          >
-                            <Printer className="w-4 h-4" />
-                            Print
-                          </button>
-                          <button
-                            onClick={() => handleEdit(result)}
-                            className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-sm flex items-center gap-1"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                            Edit
-                          </button>
-                        </>
+                        <button
+                          onClick={() => handlePrint(result)}
+                          className="text-blue-600 hover:text-blue-800 font-semibold text-sm flex items-center gap-1"
+                          title="Print Result"
+                        >
+                          <Printer className="w-4 h-4" />
+                          Print
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -613,6 +767,34 @@ export default function TestResultsPage() {
           </table>
         </div>
       </div>
+
+      {/* Status Stepper Modal */}
+      {expandedStepperId && (() => {
+        const result = results.find(r => r.id === expandedStepperId);
+        if (!result) return null;
+        return (
+          <>
+            {/* Backdrop */}
+            <div 
+              className="fixed inset-0 bg-black/20 z-40" 
+              onClick={() => setExpandedStepperId(null)}
+            />
+            {/* Modal */}
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+              <div className="pointer-events-auto">
+                <StatusStepper 
+                  currentStatus={result.status}
+                  onAdvance={() => {
+                    moveToNextStatus(result.id, result.status);
+                    setExpandedStepperId(null);
+                  }}
+                  isUpdating={updatingStatusId === result.id}
+                />
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Print Report - Hidden but printable */}
       {printResult && (() => {

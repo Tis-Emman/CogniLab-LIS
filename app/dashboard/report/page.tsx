@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Eye, Printer, FileText } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
-import { fetchTestResults, fetchPatients } from '@/lib/database';
+import { fetchTestResults, fetchPatients, fetchBilling } from '@/lib/database';
 
 // Tests that have dropdown options (no numeric reference range)
 const DROPDOWN_TESTS = [
@@ -63,11 +63,13 @@ export default function PrintReportPage() {
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [testResults, setTestResults] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
+  const [billings, setBillings] = useState<any[]>([]);
 
   // Load test results on mount
   useEffect(() => {
     loadTestResults();
     loadPatients();
+    loadBillings();
   }, []);
 
   // Inject animation keyframes
@@ -123,6 +125,11 @@ export default function PrintReportPage() {
     setTestResults(results);
   };
 
+  const loadBillings = async () => {
+    const data = await fetchBilling();
+    setBillings(data);
+  };
+
   // Build report data from selected patient and their test results
   const buildReportData = (patientId: string) => {
     const patient = patients.find(p => p.id === patientId);
@@ -130,6 +137,18 @@ export default function PrintReportPage() {
 
     const patientFullName = `${patient.first_name} ${patient.last_name}`;
     const patientResults = testResults.filter(r => r.patient_name === patientFullName);
+
+    // Determine billing status based on actual billing records
+    // Check if all tests for this patient are paid
+    const patientBillings = billings.filter(b => 
+      b.patient_name === patientFullName || b.patientName === patientFullName
+    );
+    const allTestsPaid = patientResults.length > 0 && patientResults.every(test => {
+      const billing = patientBillings.find(b => 
+        (b.test_name === test.test_name || b.testName === test.test_name)
+      );
+      return billing?.status === 'paid';
+    });
 
     return {
       patientName: patientFullName,
@@ -154,7 +173,7 @@ export default function PrintReportPage() {
               unit: '-',
             },
           ],
-      billingStatus: 'paid' as const,
+      billingStatus: allTestsPaid ? 'paid' as const : 'unpaid' as const,
       dateReleased: new Date().toISOString().split('T')[0],
     };
   };
