@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, User, ArrowRight, Trash2, Loader } from 'lucide-react';
-import { fetchPatients, addPatient, updatePatient, deletePatient } from '@/lib/database';
+import { useRouter } from 'next/navigation';
+import { Plus, User, ArrowRight, Trash2, Loader, X, CheckCircle } from 'lucide-react';
+import { fetchPatients, addPatient, updatePatient, deletePatient, addTestResult } from '@/lib/database';
 import { useAuth } from '@/lib/authContext';
+import { TEST_REFERENCE_RANGES } from '@/lib/mockData';
 
 interface Patient {
   id: string;
@@ -27,8 +29,61 @@ interface Patient {
   date_registered: string;
 }
 
+const LAB_SECTIONS = [
+  'BLOOD BANK',
+  'ISBB',
+  'HEMATOLOGY',
+  'CLINICAL MICROSCOPY',
+  'CLINICAL CHEMISTRY',
+  'MICROBIOLOGY',
+  'IMMUNOLOGY',
+  'HISTOPATHOLOGY',
+  'SEROLOGY',
+];
+
+// Dynamically generate TESTS_BY_SECTION from TEST_REFERENCE_RANGES
+const TESTS_BY_SECTION: Record<string, { name: string; referenceRange: string; unit: string }[]> = Object.keys(
+  TEST_REFERENCE_RANGES,
+).reduce((acc, section) => {
+  acc[section] = Object.entries(TEST_REFERENCE_RANGES[section]).map(([testName, range]) => ({
+    name: testName,
+    referenceRange: range.normal || `${range.min || ''} - ${range.max || ''}`,
+    unit: range.unit,
+  }));
+  return acc;
+}, {} as Record<string, { name: string; referenceRange: string; unit: string }[]>);
+
+// Predefined dropdown options for specific tests
+const TEST_DROPDOWN_OPTIONS: Record<string, string[]> = {
+  'ABO Blood Typing': ['Type A', 'Type B', 'Type AB', 'Type O'],
+  'Rh Typing': ['Rh Positive (D+)', 'Rh Negative (D-)'],
+  'Crossmatching': ['Compatible', 'Incompatible', 'Least Compatible'],
+  'Antibody Screening': ['Positive', 'Negative'],
+  'Infectious Disease Screening': ['Non-Reactive for any infectious disease', 'Reactive for HIV', 'Reactive for HBV', 'Reactive for HCV', 'Reactive for Syphilis', 'Reactive for Malaria'],
+  'Culture': ['No growth', 'Growth detected'],
+  'Sensitivity': ['S (Susceptible)', 'I (Intermediate)', 'R (Resistant)'],
+  'Gram Staining': ['No bacteria seen', 'Gram Positive Cocci', 'Gram Positive Bacilli', 'Gram Negative Cocci', 'Gram Negative Bacilli'],
+  'India Ink': ['Negative', 'Positive'],
+  'Wet Mount': ['Negative', 'Positive'],
+  'KOH Mount': ['Negative', 'Positive'],
+  'Pregnancy Test (hCG)': ['Negative', 'Positive'],
+  'Fecal Occult Blood Test': ['Negative', 'Positive'],
+  'Fecalysis - Ova or Parasite': ['Negative', 'Positive - Ascaris', 'Positive - Hookworm', 'Positive - Trichuris'],
+  'Fecal Occult Blood Test (FOBT)': ['Positive', 'Negative', 'Invalid'],
+  'Pregnancy Test (PT)': ['Positive', 'Negative', 'Invalid'],
+  // Routine Fecalysis (FA) Component
+  'Routine Fecalysis (FA)': ['No Ova or Parasite seen', 'Scant/Few Ova or Parasite seen', 'Moderate Ova or Parasite seen', 'Many/Numerous Ova or Parasite seen'],
+  // Routine Urinalysis (UA) Components
+  'UA_Color': ['Clear', 'Pale Yellow', 'Amber'],
+  'UA_Transparency': ['Clear', 'Slightly Turbid', 'Turbid', 'Very Turbid'],
+  'UA_Protein_Glucose': ['Positive', 'Negative'],
+  'UA_Bilirubin_Ketone': ['Positive', 'Negative'],
+  'UA_Bacteria_Casts_Crystals': ['None', 'Rare', 'Few', 'Many'],
+};
+
 export default function PatientsPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,6 +111,67 @@ export default function PatientsPage() {
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Test Result Form States
+  const [showTestForm, setShowTestForm] = useState(false);
+  const [newPatientName, setNewPatientName] = useState('');
+  const [patientSex, setPatientSex] = useState<'Male' | 'Female'>('Male');
+  const [selectedSection, setSelectedSection] = useState<string>('');
+  const [selectedTest, setSelectedTest] = useState<string>('');
+  const [resultValue, setResultValue] = useState('');
+  const [testSubmitting, setTestSubmitting] = useState(false);
+  const [testErrors, setTestErrors] = useState<Record<string, string>>({});
+  
+  // CBC Components State
+  const [cbcValues, setCbcValues] = useState({
+    neutrophils: '',
+    lymphocytes: '',
+    monocytes: '',
+    eosinophils: '',
+    basophils: '',
+  });
+
+  // RBC Indices State
+  const [rbcValues, setRbcValues] = useState({
+    mcv: '',
+    mch: '',
+    rdw: '',
+  });
+
+  // Hemoglobin State (single value based on patient sex)
+  const [hemoglobinValue, setHemoglobinValue] = useState('');
+
+  // PT/INR/aPTT State
+  const [coagulationValues, setCoagulationValues] = useState({
+    pt: '',
+    inr: '',
+    aptt: '',
+  });
+
+  // Routine Urinalysis (UA) State
+  const [urinalysisValues, setUrinalysisValues] = useState({
+    color: '',
+    transparency: '',
+    pH: '',
+    proteinGlucose: '',
+    bilirubinKetone: '',
+    urobilinogen: '',
+    wbcMicroscopic: '',
+    rbcMicroscopic: '',
+    bacteriaCastsCrystals: '',
+  });
+
+  // Culture and Sensitivity State
+  const [cultureSensitivityValues, setCultureSensitivityValues] = useState({
+    culture: '',
+    preliminaryReport: '',
+    finalReport: '',
+    sensitivity: '',
+  });
+
+  // Success Summary State
+  const [showSuccessSummary, setShowSuccessSummary] = useState(false);
+  const [savedTestsData, setSavedTestsData] = useState<any[]>([]);
 
   // Inject animation keyframes
   useEffect(() => {
@@ -188,6 +304,11 @@ export default function PatientsPage() {
       });
       setErrors({});
       setShowForm(false);
+      
+      // Show test result form for the newly added patient
+      setNewPatientName(`${formData.first_name} ${formData.last_name}`);
+      setPatientSex(formData.sex as 'Male' | 'Female');
+      setShowTestForm(true);
     } catch (error) {
       console.error('Error adding patient:', error);
     } finally {
@@ -200,6 +321,247 @@ export default function PatientsPage() {
       await deletePatient(id);
       await loadPatients();
     }
+  };
+
+  // Filter tests based on patient sex - hide opposite sex variants
+  const currentTests = selectedSection 
+    ? (TESTS_BY_SECTION[selectedSection] || []).filter((test) => {
+        // Remove opposite sex variants
+        if (patientSex === 'Male' && test.name.includes('(Female)')) return false;
+        if (patientSex === 'Female' && test.name.includes('(Male)')) return false;
+        // Remove explicit Hemoglobin (Male/Female) since "Hemoglobin" handles it
+        if (test.name === 'Hemoglobin (Male)' || test.name === 'Hemoglobin (Female)') return false;
+        return true;
+      })
+    : [];
+
+  const validateTestForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    if (!selectedSection) newErrors.section = 'Lab section is required';
+    if (!selectedTest) newErrors.test = 'Test is required';
+    
+    if (selectedTest === 'CBC') {
+      if (!cbcValues.neutrophils || !cbcValues.lymphocytes || !cbcValues.monocytes || !cbcValues.eosinophils || !cbcValues.basophils) {
+        newErrors.cbc = 'All CBC components are required';
+      }
+    } else if (selectedTest === 'RBC Indices (MCV, MCH, RDW)') {
+      if (!rbcValues.mcv || !rbcValues.mch || !rbcValues.rdw) {
+        newErrors.rbc = 'All RBC indices are required';
+      }
+    } else if (selectedTest === 'Hemoglobin') {
+      if (!hemoglobinValue) {
+        newErrors.hemoglobin = 'Hemoglobin value is required';
+      }
+    } else if (selectedTest === 'PT/INR/aPTT') {
+      if (!coagulationValues.pt || !coagulationValues.inr || !coagulationValues.aptt) {
+        newErrors.coagulation = 'All coagulation values (PT, INR, aPTT) are required';
+      }
+    } else if (selectedTest === 'Routine Urinalysis (UA)') {
+      if (!urinalysisValues.color || !urinalysisValues.transparency || !urinalysisValues.pH || !urinalysisValues.proteinGlucose || !urinalysisValues.bilirubinKetone || !urinalysisValues.urobilinogen || !urinalysisValues.wbcMicroscopic || !urinalysisValues.rbcMicroscopic || !urinalysisValues.bacteriaCastsCrystals) {
+        newErrors.urinalysis = 'All urinalysis components are required';
+      }
+    } else if (selectedTest === 'Culture and Sensitivity') {
+      if (!cultureSensitivityValues.culture || !cultureSensitivityValues.preliminaryReport || !cultureSensitivityValues.finalReport || !cultureSensitivityValues.sensitivity) {
+        newErrors.cultureSensitivity = 'Culture, Preliminary Report, Final Report, and Sensitivity are all required';
+      }
+    } else {
+      if (!resultValue) newErrors.resultValue = 'Result value is required';
+    }
+
+    setTestErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const handleTestSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!validateTestForm()) {
+      return;
+    }
+
+    const testDetails = currentTests.find((t) => t.name === selectedTest);
+    if (!testDetails) return;
+
+    setTestSubmitting(true);
+    const savedTests: any[] = [];
+    
+    try {
+      if (selectedTest === 'CBC') {
+        // Submit each CBC component separately
+        const cbcComponents = [
+          { name: 'Neutrophils', value: cbcValues.neutrophils, range: '45 - 75', unit: '%' },
+          { name: 'Lymphocytes', value: cbcValues.lymphocytes, range: '16 - 46', unit: '%' },
+          { name: 'Monocytes', value: cbcValues.monocytes, range: '4 - 11', unit: '%' },
+          { name: 'Eosinophils', value: cbcValues.eosinophils, range: '0 - 8', unit: '%' },
+          { name: 'Basophils', value: cbcValues.basophils, range: '0 - 3', unit: '%' },
+        ];
+
+        for (const component of cbcComponents) {
+          await addTestResult({
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: component.name,
+            result_value: component.value,
+            reference_range: component.range,
+            unit: component.unit,
+          }, user);
+          
+          savedTests.push(component);
+        }
+      } else if (selectedTest === 'RBC Indices (MCV, MCH, RDW)') {
+        // Submit each RBC Indices component separately
+        const rbcComponents = [
+          { name: 'MCV', value: rbcValues.mcv, range: '80 - 100', unit: 'fL' },
+          { name: 'MCH', value: rbcValues.mch, range: '27 - 31', unit: 'pg' },
+          { name: 'RDW', value: rbcValues.rdw, range: '11.5 - 14.5', unit: '%' },
+        ];
+
+        for (const component of rbcComponents) {
+          await addTestResult({
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: component.name,
+            result_value: component.value,
+            reference_range: component.range,
+            unit: component.unit,
+          }, user);
+          
+          savedTests.push(component);
+        }
+      } else if (selectedTest === 'Hemoglobin') {
+        // Submit Hemoglobin based on patient sex
+        const testName = patientSex === 'Male' ? 'Hemoglobin (Male)' : 'Hemoglobin (Female)';
+        const referenceRange = patientSex === 'Male' ? '14.0 - 17.0' : '12.0 - 15.0';
+        
+        await addTestResult({
+          patient_name: newPatientName,
+          section: selectedSection,
+          test_name: testName,
+          result_value: hemoglobinValue,
+          reference_range: referenceRange,
+          unit: 'g/dL',
+        }, user);
+        
+        savedTests.push({
+          name: testName,
+          value: hemoglobinValue,
+          range: referenceRange,
+          unit: 'g/dL',
+        });
+      } else if (selectedTest === 'PT/INR/aPTT') {
+        // Submit each coagulation component separately
+        const coagulationComponents = [
+          { name: 'PT', value: coagulationValues.pt, range: '11.0 - 13.5', unit: 'seconds' },
+          { name: 'INR', value: coagulationValues.inr, range: '0.8 - 1.2', unit: '' },
+          { name: 'aPTT', value: coagulationValues.aptt, range: '25.0 - 35.0', unit: 'seconds' },
+        ];
+
+        for (const component of coagulationComponents) {
+          await addTestResult({
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: component.name,
+            result_value: component.value,
+            reference_range: component.range,
+            unit: component.unit,
+          }, user);
+          
+          savedTests.push(component);
+        }
+      } else if (selectedTest === 'Routine Urinalysis (UA)') {
+        // Submit each urinalysis component separately
+        const urinalysisComponents = [
+          { name: 'UA Color', value: urinalysisValues.color, range: 'Clear, Pale Yellow, Amber', unit: '' },
+          { name: 'UA Transparency', value: urinalysisValues.transparency, range: 'Clear', unit: '' },
+          { name: 'UA pH', value: urinalysisValues.pH, range: '4.5 - 8.0', unit: '' },
+          { name: 'UA Protein/Glucose', value: urinalysisValues.proteinGlucose, range: 'Positive, Negative', unit: '' },
+          { name: 'UA Bilirubin/Ketone', value: urinalysisValues.bilirubinKetone, range: 'Positive, Negative', unit: '' },
+          { name: 'UA Urobilinogen', value: urinalysisValues.urobilinogen, range: '0.2 - 1.0', unit: 'IEU/dL' },
+          { name: 'UA WBC (Microscopic)', value: urinalysisValues.wbcMicroscopic, range: '0 - 5', unit: 'hpf' },
+          { name: 'UA RBC (Microscopic)', value: urinalysisValues.rbcMicroscopic, range: '0 - 2', unit: 'hpf' },
+          { name: 'UA Bacteria/Casts/Crystals', value: urinalysisValues.bacteriaCastsCrystals, range: 'None, Rare, Few, Many', unit: '' },
+        ];
+
+        for (const component of urinalysisComponents) {
+          await addTestResult({
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: component.name,
+            result_value: component.value,
+            reference_range: component.range,
+            unit: component.unit,
+          }, user);
+          
+          savedTests.push(component);
+        }
+      } else if (selectedTest === 'Culture and Sensitivity') {
+        // Submit each culture and sensitivity component separately
+        const cultureAndSensitivityComponents = [
+          { name: 'Culture', value: cultureSensitivityValues.culture, range: 'Organism identification', unit: '' },
+          { name: 'Preliminary Report', value: cultureSensitivityValues.preliminaryReport, range: 'Growth status after 24/48 hours', unit: '' },
+          { name: 'Final Report', value: cultureSensitivityValues.finalReport, range: 'Final growth status after 5-7 days', unit: '' },
+          { name: 'Sensitivity (Antibiogram)', value: cultureSensitivityValues.sensitivity, range: 'S (Susceptible), I (Intermediate), R (Resistant)', unit: '' },
+        ];
+
+        for (const component of cultureAndSensitivityComponents) {
+          await addTestResult({
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: component.name,
+            result_value: component.value,
+            reference_range: component.range,
+            unit: component.unit,
+          }, user);
+          
+          savedTests.push(component);
+        }
+      } else {
+        await addTestResult({
+          patient_name: newPatientName,
+          section: selectedSection,
+          test_name: selectedTest,
+          result_value: resultValue,
+          reference_range: testDetails.referenceRange,
+          unit: testDetails.unit,
+        }, user);
+        
+        savedTests.push({
+          name: selectedTest,
+          value: resultValue,
+          range: testDetails.referenceRange,
+          unit: testDetails.unit,
+        });
+      }
+
+      // Show success summary
+      setSavedTestsData(savedTests);
+      setShowSuccessSummary(true);
+      
+      // Auto redirect after 3 seconds
+      setTimeout(() => {
+        router.push('/dashboard/results');
+      }, 3000);
+    } catch (error) {
+      console.error('Error saving test result:', error);
+      setTestSubmitting(false);
+    }
+  };
+
+  const closeTestForm = () => {
+    setShowTestForm(false);
+    setSelectedSection('');
+    setSelectedTest('');
+    setResultValue('');
+    setCbcValues({ neutrophils: '', lymphocytes: '', monocytes: '', eosinophils: '', basophils: '' });
+    setRbcValues({ mcv: '', mch: '', rdw: '' });
+    setHemoglobinValue('');
+    setCoagulationValues({ pt: '', inr: '', aptt: '' });
+    setUrinalysisValues({ color: '', transparency: '', pH: '', proteinGlucose: '', bilirubinKetone: '', urobilinogen: '', wbcMicroscopic: '', rbcMicroscopic: '', bacteriaCastsCrystals: '' });
+    setCultureSensitivityValues({ culture: '', preliminaryReport: '', finalReport: '', sensitivity: '' });
+    setTestErrors({});
+    setNewPatientName('');
+    setPatientSex('Male');
   };
 
   if (loading) {
@@ -365,7 +727,6 @@ export default function PatientsPage() {
                 >
                   <option>Male</option>
                   <option>Female</option>
-                  <option>Others</option>
                 </select>
               </div>
 
@@ -752,6 +1113,614 @@ export default function PatientsPage() {
                 className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition font-semibold"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Summary Card */}
+      {showSuccessSummary && (
+        <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full">
+            {/* Success Header */}
+            <div className="bg-gradient-to-r from-green-600 to-green-700 text-white px-8 py-6 flex items-center gap-3">
+              <CheckCircle className="w-8 h-8" />
+              <h2 className="text-2xl font-bold">Test Results Saved Successfully!</h2>
+            </div>
+
+            {/* Summary Content */}
+            <div className="p-8 space-y-6">
+              <div className="space-y-2">
+                <p className="text-gray-600"><span className="font-semibold">Patient:</span> {newPatientName}</p>
+                <p className="text-gray-600"><span className="font-semibold">Section:</span> {selectedSection}</p>
+              </div>
+
+              {/* Saved Tests List */}
+              <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                <h3 className="font-semibold text-gray-700 mb-3">Test Results Added:</h3>
+                {savedTestsData.map((test, index) => (
+                  <div key={index} className="bg-white p-3 rounded border border-gray-200">
+                    <p className="font-semibold text-gray-800">{test.name}</p>
+                    <p className="text-sm text-gray-600">Result: <span className="text-[#3B6255] font-semibold">{test.value} {test.unit}</span></p>
+                    <p className="text-sm text-gray-600">Reference: {test.range} {test.unit}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Message */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                <p className="text-gray-700">Redirecting to Results page in <span className="font-bold text-[#3B6255]">3 seconds</span>...</p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-gray-50 border-t border-gray-200 px-8 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => router.push('/dashboard/results')}
+                className="px-6 py-2 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold"
+              >
+                Go to Results Now →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Test Result Form Modal */}
+      {showTestForm && !showSuccessSummary && (
+        <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-gradient-to-r from-[#3B6255] to-green-900 text-white px-8 py-6 flex justify-between items-center">
+              <h2 className="text-2xl font-bold">Enter Test Result</h2>
+              <button
+                onClick={closeTestForm}
+                className="text-white hover:bg-white/20 rounded-lg p-1 transition"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-8">
+              <form onSubmit={handleTestSubmit} className="space-y-6">
+                {/* Patient Name (Read-only) */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Patient Name
+                  </label>
+                  <input
+                    type="text"
+                    value={newPatientName}
+                    disabled
+                    className="w-full px-4 py-2 border rounded-lg bg-gray-100 text-gray-800 cursor-not-allowed"
+                  />
+                </div>
+
+                {/* Lab Section */}
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Lab Section <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={selectedSection}
+                    onChange={(e) => {
+                      setSelectedSection(e.target.value);
+                      setSelectedTest('');
+                      setResultValue('');
+                    }}
+                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
+                      testErrors.section ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                  >
+                    <option value="">--Select Section--</option>
+                    {LAB_SECTIONS.map((section) => (
+                      <option key={section} value={section}>
+                        {section}
+                      </option>
+                    ))}
+                  </select>
+                  {testErrors.section && <p className="text-red-500 text-sm mt-1">{testErrors.section}</p>}
+                </div>
+
+                {/* Test Name */}
+                {selectedSection && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Test Name <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={selectedTest}
+                      onChange={(e) => {
+                        setSelectedTest(e.target.value);
+                        setResultValue('');
+                      }}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
+                        testErrors.test ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    >
+                      <option value="">--Select Test--</option>
+                      {[...currentTests].sort((a, b) => a.name.localeCompare(b.name)).map((test) => (
+                        <option key={test.name} value={test.name}>
+                          {test.name}
+                        </option>
+                      ))}
+                    </select>
+                    {testErrors.test && <p className="text-red-500 text-sm mt-1">{testErrors.test}</p>}
+                  </div>
+                )}
+
+                {/* Result Value - CBC Special Case */}
+                {selectedTest === 'CBC' && (
+                  <div className="space-y-4">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      CBC Components <span className="text-red-500">*</span>
+                    </label>
+                    
+                    <div className="grid grid-cols-1 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Neutrophils (%)</label>
+                        <input
+                          type="text"
+                          value={cbcValues.neutrophils}
+                          onChange={(e) => setCbcValues({...cbcValues, neutrophils: e.target.value})}
+                          placeholder="45-75"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 45 - 75%</p>
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Lymphocytes (%)</label>
+                        <input
+                          type="text"
+                          value={cbcValues.lymphocytes}
+                          onChange={(e) => setCbcValues({...cbcValues, lymphocytes: e.target.value})}
+                          placeholder="16-46"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 16 - 46%</p>
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Monocytes (%)</label>
+                        <input
+                          type="text"
+                          value={cbcValues.monocytes}
+                          onChange={(e) => setCbcValues({...cbcValues, monocytes: e.target.value})}
+                          placeholder="4-11"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 4 - 11%</p>
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Eosinophils (%)</label>
+                        <input
+                          type="text"
+                          value={cbcValues.eosinophils}
+                          onChange={(e) => setCbcValues({...cbcValues, eosinophils: e.target.value})}
+                          placeholder="0-8"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0 - 8%</p>
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Basophils (%)</label>
+                        <input
+                          type="text"
+                          value={cbcValues.basophils}
+                          onChange={(e) => setCbcValues({...cbcValues, basophils: e.target.value})}
+                          placeholder="0-3"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0 - 3%</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Result Value - RBC Indices Special Case */}
+                {selectedTest === 'RBC Indices (MCV, MCH, RDW)' && (
+                  <div className="space-y-4">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      RBC Indices Components <span className="text-red-500">*</span>
+                    </label>
+                    
+                    <div className="grid grid-cols-1 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">MCV (fL)</label>
+                        <input
+                          type="text"
+                          value={rbcValues.mcv}
+                          onChange={(e) => setRbcValues({...rbcValues, mcv: e.target.value})}
+                          placeholder="80-100"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 80 - 100 fL</p>
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">MCH (pg)</label>
+                        <input
+                          type="text"
+                          value={rbcValues.mch}
+                          onChange={(e) => setRbcValues({...rbcValues, mch: e.target.value})}
+                          placeholder="27-31"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 27 - 31 pg</p>
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">RDW (%)</label>
+                        <input
+                          type="text"
+                          value={rbcValues.rdw}
+                          onChange={(e) => setRbcValues({...rbcValues, rdw: e.target.value})}
+                          placeholder="11.5-14.5"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 11.5 - 14.5 %</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Result Value - Hemoglobin Special Case */}
+                {selectedTest === 'Hemoglobin' && (
+                  <div className="space-y-4">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Hemoglobin Value ({patientSex}) <span className="text-red-500">*</span>
+                    </label>
+                    
+                    <div className="grid grid-cols-1 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Hemoglobin (g/dL)</label>
+                        <input
+                          type="text"
+                          value={hemoglobinValue}
+                          onChange={(e) => setHemoglobinValue(e.target.value)}
+                          placeholder={patientSex === 'Male' ? '14.0-17.0' : '12.0-15.0'}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range ({patientSex}): {patientSex === 'Male' ? '14.0 - 17.0' : '12.0 - 15.0'} g/dL
+                        </p>
+                      </div>
+                    </div>
+                    {testErrors.hemoglobin && <p className="text-red-500 text-sm mt-1">{testErrors.hemoglobin}</p>}v c
+                  </div>
+                )}
+
+                {/* Result Value - PT/INR/aPTT Special Case */}
+                {selectedTest === 'PT/INR/aPTT' && (
+                  <div className="space-y-4">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Coagulation Values <span className="text-red-500">*</span>
+                    </label>
+                    
+                    <div className="grid grid-cols-1 gap-3">
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">PT (seconds)</label>
+                        <input
+                          type="text"
+                          value={coagulationValues.pt}
+                          onChange={(e) => setCoagulationValues({...coagulationValues, pt: e.target.value})}
+                          placeholder="11.0-13.5"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 11.0 - 13.5 seconds</p>
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">INR</label>
+                        <input
+                          type="text"
+                          value={coagulationValues.inr}
+                          onChange={(e) => setCoagulationValues({...coagulationValues, inr: e.target.value})}
+                          placeholder="0.8-1.2"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0.8 - 1.2</p>
+                      </div>
+                      
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">aPTT (seconds)</label>
+                        <input
+                          type="text"
+                          value={coagulationValues.aptt}
+                          onChange={(e) => setCoagulationValues({...coagulationValues, aptt: e.target.value})}
+                          placeholder="25.0-35.0"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 25.0 - 35.0 seconds</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Result Value - Routine Urinalysis (UA) Special Case */}
+                {selectedTest === 'Routine Urinalysis (UA)' && (
+                  <div className="space-y-4">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Urinalysis Components <span className="text-red-500">*</span>
+                    </label>
+                    
+                    <div className="grid grid-cols-1 gap-3">
+                      {/* Color (Dropdown) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Color</label>
+                        <select
+                          value={urinalysisValues.color}
+                          onChange={(e) => setUrinalysisValues({...urinalysisValues, color: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
+                        >
+                          <option value="">Select color</option>
+                          <option value="Clear">Clear</option>
+                          <option value="Pale Yellow">Pale Yellow</option>
+                          <option value="Amber">Amber</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Choices: Clear, Pale Yellow, Amber</p>
+                      </div>
+
+                      {/* Transparency (Dropdown) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Transparency</label>
+                        <select
+                          value={urinalysisValues.transparency}
+                          onChange={(e) => setUrinalysisValues({...urinalysisValues, transparency: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
+                        >
+                          <option value="">Select transparency</option>
+                          <option value="Clear">Clear</option>
+                          <option value="Slightly Turbid">Slightly Turbid</option>
+                          <option value="Turbid">Turbid</option>
+                          <option value="Very Turbid">Very Turbid</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Choices: Clear, Slightly Turbid, Turbid, Very Turbid</p>
+                      </div>
+
+                      {/* pH (Text Input) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">pH</label>
+                        <input
+                          type="text"
+                          value={urinalysisValues.pH}
+                          onChange={(e) => setUrinalysisValues({...urinalysisValues, pH: e.target.value})}
+                          placeholder="4.5-8.0"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 4.5 - 8.0</p>
+                      </div>
+
+                      {/* Protein/Glucose (Dropdown) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Protein/Glucose</label>
+                        <select
+                          value={urinalysisValues.proteinGlucose}
+                          onChange={(e) => setUrinalysisValues({...urinalysisValues, proteinGlucose: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
+                        >
+                          <option value="">Select result</option>
+                          <option value="Positive">Positive</option>
+                          <option value="Negative">Negative</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Choices: Positive, Negative</p>
+                      </div>
+
+                      {/* Bilirubin/Ketone (Dropdown) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Bilirubin/Ketone</label>
+                        <select
+                          value={urinalysisValues.bilirubinKetone}
+                          onChange={(e) => setUrinalysisValues({...urinalysisValues, bilirubinKetone: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
+                        >
+                          <option value="">Select result</option>
+                          <option value="Positive">Positive</option>
+                          <option value="Negative">Negative</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Choices: Positive, Negative</p>
+                      </div>
+
+                      {/* Urobilinogen (Text Input) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Urobilinogen (IEU/dL)</label>
+                        <input
+                          type="text"
+                          value={urinalysisValues.urobilinogen}
+                          onChange={(e) => setUrinalysisValues({...urinalysisValues, urobilinogen: e.target.value})}
+                          placeholder="0.2-1.0"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0.2 - 1.0 IEU/dL</p>
+                      </div>
+
+                      {/* WBC (Microscopic) (Text Input) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">WBC (Microscopic) (hpf)</label>
+                        <input
+                          type="text"
+                          value={urinalysisValues.wbcMicroscopic}
+                          onChange={(e) => setUrinalysisValues({...urinalysisValues, wbcMicroscopic: e.target.value})}
+                          placeholder="0-5"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0 - 5 hpf</p>
+                      </div>
+
+                      {/* RBC (Microscopic) (Text Input) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">RBC (Microscopic) (hpf)</label>
+                        <input
+                          type="text"
+                          value={urinalysisValues.rbcMicroscopic}
+                          onChange={(e) => setUrinalysisValues({...urinalysisValues, rbcMicroscopic: e.target.value})}
+                          placeholder="0-2"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0 - 2 hpf</p>
+                      </div>
+
+                      {/* Bacteria/Casts/Crystals (Dropdown) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Bacteria/Casts/Crystals</label>
+                        <select
+                          value={urinalysisValues.bacteriaCastsCrystals}
+                          onChange={(e) => setUrinalysisValues({...urinalysisValues, bacteriaCastsCrystals: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
+                        >
+                          <option value="">Select result</option>
+                          <option value="None">None</option>
+                          <option value="Rare">Rare</option>
+                          <option value="Few">Few</option>
+                          <option value="Many">Many</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Choices: None, Rare, Few, Many</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {selectedTest === 'Culture and Sensitivity' && (
+                  <div className="space-y-4">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Culture and Sensitivity <span className="text-red-500">*</span>
+                    </label>
+                    
+                    <div className="grid grid-cols-1 gap-3">
+                      {/* Culture (Text Input) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Culture</label>
+                        <input
+                          type="text"
+                          value={cultureSensitivityValues.culture}
+                          onChange={(e) => setCultureSensitivityValues({...cultureSensitivityValues, culture: e.target.value})}
+                          placeholder="e.g. Staphylococcus aureus"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Organism identification (e.g., Staphylococcus aureus)</p>
+                      </div>
+
+                      {/* Preliminary Report (Text Input) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Preliminary Report</label>
+                        <input
+                          type="text"
+                          value={cultureSensitivityValues.preliminaryReport}
+                          onChange={(e) => setCultureSensitivityValues({...cultureSensitivityValues, preliminaryReport: e.target.value})}
+                          placeholder="e.g. No growth after 24/48 hours"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Growth status after 24/48 hours</p>
+                      </div>
+
+                      {/* Final Report (Text Input) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Final Report</label>
+                        <input
+                          type="text"
+                          value={cultureSensitivityValues.finalReport}
+                          onChange={(e) => setCultureSensitivityValues({...cultureSensitivityValues, finalReport: e.target.value})}
+                          placeholder="e.g. No growth after 5-7 days"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Final growth status after 5-7 days</p>
+                      </div>
+
+                      {/* Sensitivity (Antibiogram) (Dropdown) */}
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">Sensitivity (Antibiogram)</label>
+                        <select
+                          value={cultureSensitivityValues.sensitivity}
+                          onChange={(e) => setCultureSensitivityValues({...cultureSensitivityValues, sensitivity: e.target.value})}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
+                        >
+                          <option value="">Select sensitivity</option>
+                          <option value="S (Susceptible): The antibiotic is effective">S (Susceptible): The antibiotic is effective</option>
+                          <option value="I (Intermediate): The antibiotic may work at higher doses">I (Intermediate): The antibiotic may work at higher doses</option>
+                          <option value="R (Resistant): The antibiotic will not work">R (Resistant): The antibiotic will not work</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">S: Susceptible | I: Intermediate | R: Resistant</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Result Value - Regular Tests */}
+                {selectedTest && selectedTest !== 'CBC' && selectedTest !== 'RBC Indices (MCV, MCH, RDW)' && selectedTest !== 'Hemoglobin' && selectedTest !== 'PT/INR/aPTT' && selectedTest !== 'Routine Urinalysis (UA)' && selectedTest !== 'Culture and Sensitivity' && (
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Result Value <span className="text-red-500">*</span>
+                    </label>
+                    <div className="flex gap-2">
+                      {TEST_DROPDOWN_OPTIONS[selectedTest] ? (
+                        <select
+                          value={resultValue}
+                          onChange={(e) => setResultValue(e.target.value)}
+                          className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
+                            testErrors.resultValue ? 'border-red-500' : 'border-gray-300'
+                          }`}
+                        >
+                          <option value="">Select result</option>
+                          {TEST_DROPDOWN_OPTIONS[selectedTest].map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={resultValue}
+                          onChange={(e) => setResultValue(e.target.value)}
+                          placeholder="Enter result value"
+                          className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
+                            testErrors.resultValue ? 'border-red-500' : 'border-gray-300'
+                          }`}
+                        />
+                      )}
+                      {currentTests.find((t) => t.name === selectedTest)?.unit && (
+                        <span className="px-4 py-2 bg-gray-100 rounded-lg flex items-center text-gray-700 font-semibold">
+                          {currentTests.find((t) => t.name === selectedTest)?.unit}
+                        </span>
+                      )}
+                    </div>
+                    {testErrors.resultValue && <p className="text-red-500 text-sm mt-1">{testErrors.resultValue}</p>}
+                  </div>
+                )}
+
+                {/* Reference Range - Show for tests without dropdown options */}
+                {selectedTest && !TEST_DROPDOWN_OPTIONS[selectedTest] && (
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Reference Range
+                    </label>
+                    <p className="text-gray-700 text-sm">
+                      {currentTests.find((t) => t.name === selectedTest)?.referenceRange} {currentTests.find((t) => t.name === selectedTest)?.unit && currentTests.find((t) => t.name === selectedTest)?.unit}
+                    </p>
+                  </div>
+                )}
+              </form>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-8 py-4 flex justify-end gap-3">
+              <button
+                onClick={closeTestForm}
+                className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTestSubmit}
+                disabled={testSubmitting}
+                className="px-6 py-2 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold disabled:opacity-50"
+              >
+                {testSubmitting ? 'Saving...' : '✓ Save Test Result'}
               </button>
             </div>
           </div>

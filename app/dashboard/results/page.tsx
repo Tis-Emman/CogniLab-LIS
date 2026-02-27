@@ -29,17 +29,38 @@ const LAB_SECTIONS = [
   'MICROBIOLOGY',
   'IMMUNOLOGY',
   'HISTOPATHOLOGY',
-  'PARASITOLOGY',
   'SEROLOGY',
 ];
 
-const TESTS_BY_SECTION: Record<string, { name: string; referenceRange: string; unit: string }[]> =
-  {
-    'CLINICAL CHEMISTRY': [
-      { name: 'Blood Glucose', referenceRange: '< 140 mg/dL', unit: 'mg/dL' },
-      { name: 'Cholesterol', referenceRange: '< 200 mg/dL', unit: 'mg/dL' },
-    ],
-  };
+// Dynamically generate TESTS_BY_SECTION from TEST_REFERENCE_RANGES
+const TESTS_BY_SECTION: Record<string, { name: string; referenceRange: string; unit: string }[]> = Object.keys(
+  TEST_REFERENCE_RANGES,
+).reduce((acc, section) => {
+  acc[section] = Object.entries(TEST_REFERENCE_RANGES[section]).map(([testName, range]) => ({
+    name: testName,
+    referenceRange: range.normal || `${range.min || ''} - ${range.max || ''}`,
+    unit: range.unit,
+  }));
+  return acc;
+}, {} as Record<string, { name: string; referenceRange: string; unit: string }[]>);
+
+// Predefined dropdown options for specific tests
+const TEST_DROPDOWN_OPTIONS: Record<string, string[]> = {
+  'ABO Blood Typing': ['Type A', 'Type B', 'Type AB', 'Type O'],
+  'Rh Typing': ['Rh Positive (D+)', 'Rh Negative (D-)'],
+  'Crossmatching': ['Compatible', 'Incompatible'],
+  'Antibody Screening': ['Negative', 'Positive'],
+  'Infectious Disease Screening': ['Non-Reactive for any infectious disease', 'Reactive for HIV', 'Reactive for HBV', 'Reactive for HCV', 'Reactive for Syphilis', 'Reactive for Malaria'],
+  'Culture': ['No growth', 'Growth detected'],
+  'Sensitivity': ['S (Susceptible)', 'I (Intermediate)', 'R (Resistant)'],
+  'Gram Staining': ['No bacteria seen', 'Gram Positive Cocci', 'Gram Positive Bacilli', 'Gram Negative Cocci', 'Gram Negative Bacilli'],
+  'India Ink': ['Negative', 'Positive'],
+  'Wet Mount': ['Negative', 'Positive'],
+  'KOH Mount': ['Negative', 'Positive'],
+  'Pregnancy Test (hCG)': ['Negative', 'Positive'],
+  'Fecal Occult Blood Test': ['Negative', 'Positive'],
+  'Fecalysis - Ova or Parasite': ['Negative', 'Positive - Ascaris', 'Positive - Hookworm', 'Positive - Trichuris'],
+};
 
 export default function TestResultsPage() {
   const { user } = useAuth();
@@ -185,9 +206,6 @@ export default function TestResultsPage() {
 
     if (!patientName.trim()) newErrors.patientName = 'Patient name is required';
     if (!selectedSection) newErrors.section = 'Lab section is required';
-    if (selectedSection !== 'CLINICAL CHEMISTRY') {
-      newErrors.section = 'Results can only be entered for Clinical Chemistry section';
-    }
     if (!selectedTest) newErrors.test = 'Test is required';
     if (!resultValue) newErrors.resultValue = 'Result value is required';
 
@@ -321,20 +339,15 @@ export default function TestResultsPage() {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Patient Name <span className="text-red-500">*</span>
               </label>
-              <select
+              <input
+                type="text"
                 value={patientName}
                 onChange={(e) => setPatientName(e.target.value)}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
+                placeholder="Enter patient name"
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white placeholder-gray-500 ${
                   errors.patientName ? 'border-red-500' : 'border-gray-300'
                 }`}
-              >
-                <option value="">-- Select Patient --</option>
-                {patients.map((patient) => (
-                  <option key={patient.id} value={`${patient.first_name} ${patient.last_name}`}>
-                    {patient.first_name} {patient.last_name} (ID: {patient.patient_id_no})
-                  </option>
-                ))}
-              </select>
+              />
               {errors.patientName && (
                 <p className="text-red-500 text-sm mt-1">{errors.patientName}</p>
               )}
@@ -371,17 +384,13 @@ export default function TestResultsPage() {
                     ? 'bg-[#CBDED3] border-[#8BA49A] text-[#3B6255]'
                     : 'bg-yellow-50 border-yellow-300 text-yellow-800'
                 }`}>
-                  {selectedSection === 'CLINICAL CHEMISTRY' ? (
-                    <p>✓ Tests available in this section</p>
-                  ) : (
-                    <p>⚠️ Results are only available for Clinical Chemistry section</p>
-                  )}
+                  <p>✓ Tests available in this section</p>
                 </div>
               )}
             </div>
 
-            {/* Test Selection - Only show for Clinical Chemistry */}
-            {selectedSection === 'CLINICAL CHEMISTRY' && (
+            {/* Test Selection */}
+            {selectedSection && (
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Test Name <span className="text-red-500">*</span>
@@ -418,21 +427,38 @@ export default function TestResultsPage() {
             )}
 
             {/* Result Value */}
-            {selectedSection === 'CLINICAL CHEMISTRY' && selectedTest && (
+            {selectedTest && (
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Result Value <span className="text-red-500">*</span>
                 </label>
                 <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={resultValue}
-                    onChange={(e) => setResultValue(e.target.value)}
-                    placeholder="Enter result value"
-                    className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                      errors.resultValue ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                  />
+                  {TEST_DROPDOWN_OPTIONS[selectedTest] ? (
+                    <select
+                      value={resultValue}
+                      onChange={(e) => setResultValue(e.target.value)}
+                      className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
+                        errors.resultValue ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    >
+                      <option value="">Select result</option>
+                      {TEST_DROPDOWN_OPTIONS[selectedTest].map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={resultValue}
+                      onChange={(e) => setResultValue(e.target.value)}
+                      placeholder="Enter result value"
+                      className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
+                        errors.resultValue ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                  )}
                   <span className="px-4 py-2 bg-gray-100 rounded-lg flex items-center text-gray-700 font-semibold">
                     {currentTests.find((t) => t.name === selectedTest)?.unit}
                   </span>
@@ -544,7 +570,7 @@ export default function TestResultsPage() {
                       </span>
                     </td>
                     <td className="py-4 px-8 font-semibold text-gray-800">
-                      {price ? `₱${price}` : 'N/A'}
+                      {price ? `₱${price}` : ''}
                     </td>
                     <td className="py-4 px-8">
                       <span className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 w-fit ${
@@ -663,7 +689,7 @@ export default function TestResultsPage() {
               <div style={{ fontSize: '13px' }}>
                 <div style={{ padding: '10px', borderBottom: '1px solid #ddd', display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontWeight: 'bold' }}>Test Price:</span>
-                  <span>{price ? `₱${price.toFixed(2)}` : 'N/A'}</span>
+                  <span>{price ? `₱${price.toFixed(2)}` : ''}</span>
                 </div>
                 <div style={{ padding: '10px', borderBottom: '1px solid #ddd', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', color: billing?.status === 'paid' ? 'green' : 'orange' }}>
                   <span>Payment Status:</span>

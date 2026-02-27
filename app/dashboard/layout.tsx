@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
 import Sidebar from '@/components/Sidebar';
@@ -13,6 +13,18 @@ export default function DashboardLayout({
 }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const [isMobile, setIsMobile] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -38,22 +50,22 @@ export default function DashboardLayout({
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Sidebar */}
-      <Sidebar />
+      <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${isMobile ? 'ml-0' : sidebarOpen ? 'ml-64' : 'ml-20'}`}>
         {/* Top Header */}
-        <div className="bg-white border-b border-gray-200 px-8 py-4 shadow-sm flex-shrink-0">
+        <div className="bg-white border-b border-gray-200 px-4 md:px-8 py-4 shadow-sm flex-shrink-0">
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-gray-800">
+            <h2 className={`text-lg md:text-2xl font-bold text-gray-800 ${isMobile ? 'ml-12' : ''}`}>
               CogniLab - KRRAX-JAM Inc
             </h2>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
+            <div className="flex items-center gap-2 md:gap-4">
+              <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium text-gray-800">{user?.full_name}</p>
                 <p className="text-xs text-gray-500">{user?.role}</p>
               </div>
-              <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-bold">
+              <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm md:text-base">
                 {user?.full_name?.charAt(0) || 'U'}
               </div>
             </div>
@@ -61,7 +73,7 @@ export default function DashboardLayout({
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-auto px-8 py-8">
+        <div className="flex-1 overflow-auto px-4 md:px-8 py-4 md:py-8">
           {children}
         </div>
       </main>

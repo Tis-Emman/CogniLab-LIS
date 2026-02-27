@@ -27,7 +27,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<UserProfile>({
     id: user?.id || 'unknown',
     fullName: user?.full_name || 'Unknown User',
-    email: user?.email || 'N/A',
+    email: user?.email || '',
     phone: '+63 917 1234567',
     role: user?.role === 'faculty' ? 'Laboratory Director' : 'Medical Technologist',
     department: user?.department || 'General',

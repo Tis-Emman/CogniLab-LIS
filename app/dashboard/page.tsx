@@ -118,12 +118,12 @@ export default function Dashboard() {
       animation: 'fadeIn 0.5s ease-out'
     }}>
       {/* Welcome Section */}
-      <div className="bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg shadow-lg p-8" style={{
+      <div className="bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg shadow-lg p-6 md:p-8" style={{
         animation: 'fadeInSlideUp 0.6s ease-out',
         animationDelay: '0.1s',
         animationFillMode: 'both'
       }}>
-        <h1 className="text-3xl font-bold mb-2">Welcome to CogniLab</h1>
+        <h1 className="text-xl md:text-3xl font-bold mb-2">Welcome to CogniLab</h1>
         <p className="text-[#CBDED3]">
           Manage laboratory tests, patients, and billing for KRRAX-JAM Inc. Ensure quality care with secure data management.
         </p>
@@ -163,10 +163,10 @@ export default function Dashboard() {
       </div>
 
       {/* Quick Actions */}
-      <div className="bg-white rounded-lg shadow-lg p-8" style={{
+      <div className="bg-white rounded-lg shadow-lg p-6 md:p-8" style={{
         animation: 'fadeInSlideUp 0.6s ease-out 0.4s backwards'
       }}>
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">Quick Actions</h2>
+        <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-6">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Link
             href="/dashboard/patients"
@@ -213,11 +213,11 @@ export default function Dashboard() {
       </div>
 
       {/* Recent Patients */}
-      <div className="bg-white rounded-lg shadow-lg p-8" style={{
+      <div className="bg-white rounded-lg shadow-lg p-6 md:p-8" style={{
         animation: 'fadeInSlideUp 0.6s ease-out 0.6s backwards'
       }}>
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">Recent Patients</h2>
+          <h2 className="text-xl md:text-2xl font-bold text-gray-800">Recent Patients</h2>
           <Link
             href="/dashboard/patients"
             className="text-[#3B6255] hover:text-[#5A7669] text-sm font-semibold"

@@ -123,7 +123,7 @@ export const addPatient = async (patient: any, currentUser?: any) => {
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
-      encryption_key: currentUser?.encryption_key || 'N/A',
+      encryption_key: currentUser?.encryption_key || '',
       action: 'edit',
       resource: `${patient.patient_id_no} - ${patient.first_name} ${patient.last_name}`,
       resource_type: 'Patient',
@@ -158,7 +158,7 @@ export const addPatient = async (patient: any, currentUser?: any) => {
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
-      encryption_key: currentUser?.encryption_key || 'N/A',
+      encryption_key: currentUser?.encryption_key || '',
       action: 'edit',
       resource: `${patient.patient_id_no} - ${patient.first_name} ${patient.last_name}`,
       resource_type: 'Patient',
@@ -307,7 +307,7 @@ export const addTestResult = async (result: any, currentUser?: any) => {
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
-      encryption_key: currentUser?.encryption_key || 'N/A',
+      encryption_key: currentUser?.encryption_key || '',
       action: 'edit',
       resource: `${result.test_name} - ${result.patient_name}`,
       resource_type: 'Test Result',
@@ -333,7 +333,7 @@ export const addTestResult = async (result: any, currentUser?: any) => {
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
-      encryption_key: currentUser?.encryption_key || 'N/A',
+      encryption_key: currentUser?.encryption_key || '',
       action: 'edit',
       resource: `${result.test_name} - ${result.patient_name}`,
       resource_type: 'Test Result',
@@ -356,7 +356,7 @@ export const updateTestResult = async (id: string, result: any, currentUser?: an
         await logActivity({
           user_id: currentUser?.id,
           user_name: currentUser?.full_name || 'Unknown User',
-          encryption_key: currentUser?.encryption_key || 'N/A',
+          encryption_key: currentUser?.encryption_key || '',
           action: 'edit',
           resource: `${MOCK_TEST_RESULTS[index].test_name} - ${MOCK_TEST_RESULTS[index].patient_name}`,
           resource_type: 'Test Result',
@@ -391,7 +391,7 @@ export const updateTestResult = async (id: string, result: any, currentUser?: an
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
-      encryption_key: currentUser?.encryption_key || 'N/A',
+      encryption_key: currentUser?.encryption_key || '',
       action: 'edit',
       resource: `${data[0].test_name} - ${data[0].patient_name}`,
       resource_type: 'Test Result',
@@ -499,7 +499,7 @@ export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid',
       await logActivity({
         user_id: currentUser?.id,
         user_name: currentUser?.full_name || 'Unknown User',
-        encryption_key: currentUser?.encryption_key || 'N/A',
+        encryption_key: currentUser?.encryption_key || '',
         action: 'edit',
         resource: `${MOCK_BILLING[index].test_name} - ${MOCK_BILLING[index].patient_name}`,
         resource_type: 'Billing',
@@ -533,7 +533,7 @@ export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid',
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
-      encryption_key: currentUser?.encryption_key || 'N/A',
+      encryption_key: currentUser?.encryption_key || '',
       action: 'edit',
       resource: `${data[0].test_name} - ${data[0].patient_name}`,
       resource_type: 'Billing',
@@ -606,7 +606,7 @@ export const logActivity = async (log: {
         resource: log.resource,
         resource_type: log.resource_type,
         description: log.description,
-        ip_address: log.ip_address || 'N/A',
+        ip_address: log.ip_address || '',
         created_at: new Date().toISOString(),
       };
       MOCK_AUDIT_LOGS.push(newLog);
@@ -617,7 +617,7 @@ export const logActivity = async (log: {
       .from('audit_logs')
       .insert([{
         ...log,
-        ip_address: log.ip_address || 'N/A'
+        ip_address: log.ip_address || ''
       }]);
     
     if (error) {

@@ -34,84 +34,115 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Check if user is logged in on mount
   useEffect(() => {
+    let isEffectActive = true;
+
     const checkAuth = async () => {
       try {
         // MOCK MODE: Use mock data
         if (USE_MOCK_DATA) {
           console.log('🎭 Using MOCK authentication');
-          setUser(MOCK_AUTH_USER);
-          setAuthUser({ id: MOCK_AUTH_USER.id, email: MOCK_AUTH_USER.email });
-          setLoading(false);
+          if (isEffectActive) {
+            setUser(MOCK_AUTH_USER);
+            setAuthUser({ id: MOCK_AUTH_USER.id, email: MOCK_AUTH_USER.email });
+            setLoading(false);
+          }
           return;
         }
 
         // TEST MODE: Bypass login
         if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('testMode') === 'true') {
-          setUser({
-            id: 'test-user-id',
-            email: 'test@lis.com',
-            full_name: 'Test User',
-            role: 'member',
-            department: 'Testing',
-            encryption_key: 'TEST_KEY_001',
-          });
-          setAuthUser({ id: 'test-user-id', email: 'test@lis.com' });
-          setLoading(false);
+          if (isEffectActive) {
+            setUser({
+              id: 'test-user-id',
+              email: 'test@lis.com',
+              full_name: 'Test User',
+              role: 'member',
+              department: 'Testing',
+              encryption_key: 'TEST_KEY_001',
+            });
+            setAuthUser({ id: 'test-user-id', email: 'test@lis.com' });
+            setLoading(false);
+          }
           return;
         }
 
+        // Get the current session (this will restore from storage if available)
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
         if (session?.user) {
-          setAuthUser(session.user);
-          // Fetch user profile from custom users table
-          await fetchUserProfile(session.user.id);
+          if (isEffectActive) {
+            setAuthUser(session.user);
+          }
+          // Fetch user profile from custom users table - pass email to avoid extra call
+          await fetchUserProfile(session.user.id, session.user.email);
+          if (isEffectActive) {
+            setLoading(false);
+          }
+        } else {
+          if (isEffectActive) {
+            setLoading(false);
+          }
         }
       } catch (error) {
         console.error('Error checking auth:', error);
-      } finally {
-        setLoading(false);
+        if (isEffectActive) {
+          setLoading(false);
+        }
       }
     };
 
     checkAuth();
 
-    // Listen for auth changes
+    // Listen for auth changes (mainly for new logins during the session)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!isEffectActive) return;
+      
       if (session?.user) {
         setAuthUser(session.user);
-        await fetchUserProfile(session.user.id);
+        // Skip if this is initial session, checkAuth is handling it
+        if (event !== 'INITIAL_SESSION') {
+          await fetchUserProfile(session.user.id, session.user.email);
+        }
       } else {
         setAuthUser(null);
         setUser(null);
+        setLoading(false);
       }
     });
 
-    return () => subscription?.unsubscribe();
+    return () => {
+      isEffectActive = false;
+      subscription?.unsubscribe();
+    };
   }, []);
 
-  const fetchUserProfile = async (authUserId: string) => {
+  const fetchUserProfile = async (authUserId: string, email?: string) => {
     try {
-      // Get the auth user's email to look up in custom users table
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
+      // Use provided email, otherwise get from auth user
+      let userEmail = email;
+      
+      if (!userEmail) {
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser();
 
-      if (!authUser?.email) {
-        console.error('No auth user email found');
-        return;
+        if (!authUser?.email) {
+          console.error('No auth user email found');
+          return;
+        }
+        userEmail = authUser.email;
       }
 
-      console.log('Looking up user with email:', authUser.email);
+      console.log('Looking up user with email:', userEmail);
 
       const { data, error } = await supabase
         .from('users')
         .select('*')
-        .eq('email', authUser.email)
+        .eq('email', userEmail)
         .maybeSingle();
 
       if (error) {
@@ -130,11 +161,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           encryption_key: data.encryption_key,
         });
       } else {
-        console.warn('No user profile found for email:', authUser.email);
+        console.warn('No user profile found for email:', userEmail);
         setUser(null);
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);
+      setUser(null);
     }
   };
 

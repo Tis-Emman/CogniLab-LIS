@@ -88,7 +88,7 @@ export default function BillingPage() {
     await logActivity({
       user_id: user?.id,
       user_name: user?.full_name || 'Unknown User',
-      encryption_key: user?.encryption_key || 'N/A',
+      encryption_key: user?.encryption_key || '',
       action: 'edit',
       resource: `Billing Status Updated`,
       resource_type: 'Billing',
@@ -104,11 +104,11 @@ export default function BillingPage() {
       await logActivity({
         user_id: user?.id,
         user_name: user?.full_name || 'Unknown User',
-        encryption_key: user?.encryption_key || 'N/A',
+        encryption_key: user?.encryption_key || '',
         action: 'delete',
         resource: `${billing?.description || 'Billing Record'}`,
         resource_type: 'Billing',
-        description: `Deleted billing record for ${billing?.patient_name || 'Unknown Patient'}: ${billing?.description || 'N/A'}. Amount: ₱${billing?.amount.toFixed(2) || '0.00'}`,
+        description: `Deleted billing record for ${billing?.patient_name || 'Unknown Patient'}: ${billing?.description || ''}. Amount: ₱${billing?.amount.toFixed(2) || '0.00'}`,
       });
       await loadBilling();
     }
@@ -282,8 +282,8 @@ export default function BillingPage() {
             <tbody>
               {billings.length > 0 && billings.map((billing) => (
                 <tr key={billing.id} className="border-b border-gray-100 hover:bg-[#F0F4F1] transition">
-                  <td className="py-4 px-8 font-medium text-gray-800">{billing.patient_name || billing.patientName || 'N/A'}</td>
-                  <td className="py-4 px-8 text-gray-600">{billing.test_name || billing.testName || 'N/A'}</td>
+                  <td className="py-4 px-8 font-medium text-gray-800">{billing.patient_name || billing.patientName || ''}</td>
+                  <td className="py-4 px-8 text-gray-600">{billing.test_name || billing.testName || ''}</td>
                   <td className="py-4 px-8 font-semibold text-[#3B6255]">₱{billing.amount}</td>
                   <td className="py-4 px-8">
                     <span
@@ -312,7 +312,7 @@ export default function BillingPage() {
                       <span className="text-gray-400">—</span>
                     )}
                   </td>
-                  <td className="py-4 px-8 text-gray-600">{billing.date_created || billing.dateCreated || 'N/A'}</td>
+                  <td className="py-4 px-8 text-gray-600">{billing.date_created || billing.dateCreated || ''}</td>
                   <td className="py-4 px-8 flex gap-2">
                     {(billing.status || billing.paymentStatus) === 'unpaid' ? (
                       <>

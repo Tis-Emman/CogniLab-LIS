@@ -5,6 +5,40 @@ import { Eye, Printer, FileText } from 'lucide-react';
 import { useReactToPrint } from 'react-to-print';
 import { fetchTestResults, fetchPatients } from '@/lib/database';
 
+// Tests that have dropdown options (no numeric reference range)
+const DROPDOWN_TESTS = [
+  'ABO Blood Typing',
+  'Rh Typing',
+  'Crossmatching',
+  'Antibody Screening',
+  'Infectious Disease Screening',
+  'Culture',
+  'Sensitivity',
+  'Sensitivity (Antibiogram)',
+  'Gram Staining',
+  'India Ink',
+  'Wet Mount',
+  'KOH Mount',
+  'Pregnancy Test (hCG)',
+  'Pregnancy Test (PT)',
+  'Fecal Occult Blood Test',
+  'Fecal Occult Blood Test (FOBT)',
+  'Fecalysis - Ova or Parasite',
+  'Routine Fecalysis (FA)',
+  'UA Color',
+  'UA Transparency',
+  'UA Protein/Glucose',
+  'UA Bilirubin/Ketone',
+  'UA Bacteria/Casts/Crystals',
+  'Preliminary Report',
+  'Final Report',
+];
+
+// Helper function to check if test should show reference range
+const shouldShowReferenceRange = (testName: string): boolean => {
+  return !DROPDOWN_TESTS.includes(testName);
+};
+
 interface ReportData {
   patientName: string;
   age: number;
@@ -103,7 +137,7 @@ export default function PrintReportPage() {
       sex: patient.sex,
       municipality: patient.municipality,
       province: patient.province,
-      address: `${patient.address_house_no || 'N/A'} ${patient.address_street || patient.address_barangay}`,
+      address: `${patient.address_house_no || ''} ${patient.address_street || patient.address_barangay}`,
       physiciană: 'Dr. Santos',
       tests: patientResults.length > 0 
         ? patientResults.map(r => ({
@@ -329,10 +363,12 @@ export default function PrintReportPage() {
                       <p className="text-gray-800 font-bold">{selectedReport.patientName}</p>
                     </div>
                     <div>
-                      <p className="text-gray-600 font-semibold">Age / Sex:</p>
-                      <p className="text-gray-800 font-bold">
-                        {selectedReport.age} / {selectedReport.sex}
-                      </p>
+                      <p className="text-gray-600 font-semibold">Age:</p>
+                      <p className="text-gray-800 font-bold">{selectedReport.age}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-600 font-semibold">Sex:</p>
+                      <p className="text-gray-800 font-bold">{selectedReport.sex}</p>
                     </div>
                     <div>
                       <p className="text-gray-600 font-semibold">Municipality:</p>
@@ -358,36 +394,53 @@ export default function PrintReportPage() {
                   <h2 className="text-lg font-bold text-gray-800 mb-3 border-b-2 border-[#3B6255] pb-2">
                     LABORATORY TEST RESULTS
                   </h2>
-                  <table className="w-full border-2 border-gray-800 text-sm">
-                    <thead className="bg-[#3B6255] text-white">
-                      <tr>
-                        <th className="border-2 border-gray-800 px-4 py-3 text-left font-bold text-base">
-                          Test Name
-                        </th>
-                        <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-base">
-                          Result
-                        </th>
-                        <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-base">
-                          Unit
-                        </th>
-                        <th className="border-2 border-gray-800 px-4 py-3 text-left font-bold text-base">
-                          Reference Range
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedReport.tests.map((test, index) => (
-                        <tr key={index} className={index % 2 === 0 ? 'bg-gray-100' : 'bg-white'}>
-                          <td className="border border-gray-800 px-4 py-2 font-semibold text-gray-800">{test.name}</td>
-                          <td className="border border-gray-800 px-4 py-2 text-center font-bold text-[#3B6255] text-base">
-                            {test.result}
-                          </td>
-                          <td className="border border-gray-800 px-4 py-2 text-center font-semibold text-gray-800">{test.unit}</td>
-                          <td className="border border-gray-800 px-4 py-2 font-semibold text-gray-800">{test.referenceRange}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {(() => {
+                    const hasAnyReferenceRange = selectedReport.tests.some(test => shouldShowReferenceRange(test.name));
+                    return (
+                      <table className="w-full border-2 border-gray-800 text-sm">
+                        <thead className="bg-[#3B6255] text-white">
+                          <tr>
+                            <th className="border-2 border-gray-800 px-4 py-3 text-left font-bold text-base">
+                              Test Name
+                            </th>
+                            <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-base">
+                              Result
+                            </th>
+                            {hasAnyReferenceRange && (
+                              <>
+                                <th className="border-2 border-gray-800 px-4 py-3 text-center font-bold text-base">
+                                  Unit
+                                </th>
+                                <th className="border-2 border-gray-800 px-4 py-3 text-left font-bold text-base">
+                                  Reference Range
+                                </th>
+                              </>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedReport.tests.map((test, index) => (
+                            <tr key={index} className={index % 2 === 0 ? 'bg-gray-100' : 'bg-white'}>
+                              <td className="border border-gray-800 px-4 py-2 font-semibold text-gray-800">{test.name}</td>
+                              <td className="border border-gray-800 px-4 py-2 text-center font-bold text-[#3B6255] text-base">
+                                {test.result}
+                              </td>
+                              {hasAnyReferenceRange && (
+                                <>
+                                  <td className="border border-gray-800 px-4 py-2 text-center font-semibold text-gray-800">
+                                    {shouldShowReferenceRange(test.name) ? test.unit : ''}
+                                  </td>
+                                  <td className="border border-gray-800 px-4 py-2 font-semibold text-gray-800">
+                                    {shouldShowReferenceRange(test.name) ? test.referenceRange : ''}
+                                  </td>
+                                </>
+                              )}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
                 </div>
 
                 {/* Billing Status */}

@@ -99,10 +99,24 @@ export default function LoginPage() {
       </div>
 
       {/* Right Column - Login Form */}
-      <div className="w-full md:w-1/2 bg-white flex flex-col items-center justify-center p-8">
+      <div className="w-full md:w-1/2 bg-white flex flex-col items-center justify-center p-6 md:p-8">
         <div className="w-full max-w-md">
+          {/* Mobile Logo */}
+          <div className="md:hidden flex justify-center mb-6">
+            <div className="bg-gradient-to-br from-[#3B6255] to-green-900 rounded-xl p-4">
+              <Image
+                src="/images/logo.png"
+                alt="CogniLab Logo"
+                width={120}
+                height={120}
+                priority
+                className="object-contain"
+              />
+            </div>
+          </div>
+
           {/* Form Header */}
-          <div className="mb-8">
+          <div className="mb-8 text-center md:text-left">
             <h2 className="text-3xl font-bold text-gray-800 mb-2">Welcome Back</h2>
             <p className="text-gray-600">Sign in to your CogniLab account</p>
           </div>
