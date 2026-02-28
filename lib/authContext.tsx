@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
-import { MOCK_AUTH_USER, MOCK_USERS } from './mockData';
+import { MOCK_USERS } from './mockData';
 
 const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 
@@ -36,82 +36,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let isEffectActive = true;
 
-    const checkAuth = async () => {
-      try {
-        // MOCK MODE: Use mock data
-        if (USE_MOCK_DATA) {
-          console.log('🎭 Using MOCK authentication');
-          if (isEffectActive) {
-            setUser(MOCK_AUTH_USER);
-            setAuthUser({ id: MOCK_AUTH_USER.id, email: MOCK_AUTH_USER.email });
-            setLoading(false);
-          }
-          return;
-        }
+    // MOCK MODE: Auto-login as the faculty user from MOCK_USERS
+    if (USE_MOCK_DATA) {
+      console.log('🎭 Using MOCK authentication');
+      const mockFaculty = MOCK_USERS.find((u) => u.role === 'faculty') || MOCK_USERS[0];
+      const mockUser: User = {
+        id: mockFaculty.id,
+        email: mockFaculty.email,
+        full_name: mockFaculty.full_name,
+        role: mockFaculty.role,
+        department: mockFaculty.department,
+        encryption_key: mockFaculty.encryption_key,
+        join_date: mockFaculty.join_date,
+      };
+      setUser(mockUser);
+      setAuthUser({ id: mockFaculty.id, email: mockFaculty.email });
+      setLoading(false);
+      return;
+    }
 
-        // TEST MODE: Bypass login
-        if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('testMode') === 'true') {
-          if (isEffectActive) {
-            setUser({
-              id: 'test-user-id',
-              email: 'test@lis.com',
-              full_name: 'Test User',
-              role: 'member',
-              department: 'Testing',
-              encryption_key: 'TEST_KEY_001',
-            });
-            setAuthUser({ id: 'test-user-id', email: 'test@lis.com' });
-            setLoading(false);
-          }
-          return;
-        }
+    // TEST MODE: Bypass login
+    if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('testMode') === 'true') {
+      setUser({
+        id: 'test-user-id',
+        email: 'test@lis.com',
+        full_name: 'Test User',
+        role: 'member',
+        department: 'Testing',
+        encryption_key: 'TEST_KEY_001',
+      });
+      setAuthUser({ id: 'test-user-id', email: 'test@lis.com' });
+      setLoading(false);
+      return;
+    }
 
-        // Get the current session (this will restore from storage if available)
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        if (session?.user) {
-          if (isEffectActive) {
-            setAuthUser(session.user);
-          }
-          // Fetch user profile from custom users table - pass email to avoid extra call
-          await fetchUserProfile(session.user.id, session.user.email);
-          if (isEffectActive) {
-            setLoading(false);
-          }
-        } else {
-          if (isEffectActive) {
-            setLoading(false);
-          }
-        }
-      } catch (error) {
-        console.error('Error checking auth:', error);
-        if (isEffectActive) {
-          setLoading(false);
-        }
-      }
-    };
-
-    checkAuth();
-
-    // Listen for auth changes (mainly for new logins during the session)
+    // REAL MODE: Rely on onAuthStateChange for session restore on refresh.
+    // It fires INITIAL_SESSION with the persisted localStorage token,
+    // so we don't need a separate getSession() call that can race with it.
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!isEffectActive) return;
-      
+
       if (session?.user) {
         setAuthUser(session.user);
-        // Skip if this is initial session, checkAuth is handling it
-        if (event !== 'INITIAL_SESSION') {
-          await fetchUserProfile(session.user.id, session.user.email);
-        }
+        await fetchUserProfile(session.user.id, session.user.email);
       } else {
         setAuthUser(null);
         setUser(null);
-        setLoading(false);
       }
+      setLoading(false);
     });
 
     return () => {
