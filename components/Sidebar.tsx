@@ -53,7 +53,7 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
 
   const handleLogout = async () => {
     await signOut();
-    router.push('/login');
+    // signOut handles redirect internally via window.location.href
   };
 
   const isActive = (path: string) => pathname === path;
