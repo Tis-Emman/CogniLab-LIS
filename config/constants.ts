@@ -9,10 +9,10 @@ export const LAB_SECTIONS = [
   'HEMATOLOGY',
   'CLINICAL CHEMISTRY',
   'MICROBIOLOGY',
-  'IMMUNOLOGY',
+  'IMMUNOLOGY/SEROLOGY',
   'HISTOPATHOLOGY',
   'PARASITOLOGY',
-  'SEROLOGY',
+
 ] as const;
 
 // All sections are now active

@@ -80,7 +80,7 @@ export const TEST_PRICING: Record<string, Record<string, number>> = {
     'Liver Biopsy Fibrosis': 2000,
     'Liver Biopsy Activity': 2000,
   },
-  'IMMUNOLOGY': {
+  'IMMUNOLOGY/SEROLOGY': {
     'HBsAg (Hepa B Surface Ag) - Qualitative': 300,
     'HBsAg (Hepa B Surface Ag) - Quantitative': 400,
     'Anti-HBs (Quantitative)': 350,
@@ -228,7 +228,7 @@ export const TEST_REFERENCE_RANGES: Record<string, Record<string, { min?: number
     'Liver Biopsy Fibrosis': { normal: 'F0 (No fibrosis)', unit: '' },
     'Liver Biopsy Activity': { normal: 'A0 (No inflammation)', unit: '' },
   },
-  'IMMUNOLOGY': {
+  'IMMUNOLOGY/SEROLOGY': {
     'HBsAg (Hepa B Surface Ag) - Qualitative': { normal: 'Non-reactive', unit: '' },
     'HBsAg (Hepa B Surface Ag) - Quantitative': { max: 1.0, unit: 'S/CO' },
     'Anti-HBs (Quantitative)': { min: 10, normal: '≥ 10 mIU/mL (Immune/Protected)', unit: 'mIU/mL' },

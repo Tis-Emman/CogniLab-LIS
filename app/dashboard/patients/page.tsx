@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import PhoneInputMask from '@/components/PhoneInputMask';
 import { useRouter } from 'next/navigation';
 import { Plus, User, ArrowRight, Trash2, Loader, X, CheckCircle } from 'lucide-react';
@@ -32,14 +32,12 @@ interface Patient {
 
 const LAB_SECTIONS = [
   'BLOOD BANK',
-  'ISBB',
   'HEMATOLOGY',
   'CLINICAL MICROSCOPY',
   'CLINICAL CHEMISTRY',
   'MICROBIOLOGY',
-  'IMMUNOLOGY',
+  'IMMUNOLOGY/SEROLOGY',
   'HISTOPATHOLOGY',
-  'SEROLOGY',
 ];
 
 // Dynamically generate TESTS_BY_SECTION from TEST_REFERENCE_RANGES
@@ -108,19 +106,6 @@ export default function PatientsPage() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-
-  // Refs for required fields
-  const patientIdRef = useRef<HTMLInputElement>(null);
-  const lastNameRef = useRef<HTMLInputElement>(null);
-  const firstNameRef = useRef<HTMLInputElement>(null);
-  const ageRef = useRef<HTMLInputElement>(null);
-  const birthdateRef = useRef<HTMLInputElement>(null);
-  const contactNoRef = useRef<HTMLInputElement>(null);
-  const municipalityRef = useRef<HTMLInputElement>(null);
-  const provinceRef = useRef<HTMLInputElement>(null);
-  const medicalHistoryRef = useRef<HTMLTextAreaElement>(null);
-  const medicationsRef = useRef<HTMLTextAreaElement>(null);
-  const allergyRef = useRef<HTMLTextAreaElement>(null);
 
   const [formData, setFormData] = useState({
     patient_id_no: '',
@@ -270,36 +255,32 @@ export default function PatientsPage() {
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-    const refs: Record<string, React.RefObject<any>> = {
-      patient_id_no: patientIdRef,
-      last_name: lastNameRef,
-      first_name: firstNameRef,
-      age: ageRef,
-      birthdate: birthdateRef,
-      contact_no: contactNoRef,
-      municipality: municipalityRef,
-      province: provinceRef,
-      medical_history: medicalHistoryRef,
-      medications: medicationsRef,
-      allergy: allergyRef,
-    };
 
     if (!formData.patient_id_no.trim()) newErrors.patient_id_no = 'Patient ID is required';
     if (!formData.last_name.trim()) newErrors.last_name = 'Last name is required';
     if (!formData.first_name.trim()) newErrors.first_name = 'First name is required';
     if (!formData.age || parseInt(formData.age) < 1) newErrors.age = 'Valid age is required';
     if (!formData.birthdate) newErrors.birthdate = 'Birthdate is required';
-    // Accepts (0917) 123-4567 or 09171234567 (PH mobile)
-    const phoneRaw = formData.contact_no.replace(/\D/g, '');
-    if (!formData.contact_no.trim()) {
+    // Philippine mobile number validation
+    let contact = formData.contact_no.replace(/\s|-/g, '').trim();
+    // Acceptable formats: 09XXXXXXXXX, +639XXXXXXXXX, 639XXXXXXXXX
+    let valid = false;
+    let normalized = '';
+    if (/^09\d{9}$/.test(contact)) {
+      valid = true;
+      normalized = '+63' + contact.slice(1);
+    } else if (/^\+639\d{9}$/.test(contact)) {
+      valid = true;
+      normalized = contact;
+    } else if (/^639\d{9}$/.test(contact)) {
+      valid = true;
+      normalized = '+63' + contact.slice(2);
+    }
+    // Reject landline, letters, special chars, wrong length, wrong prefix
+    if (!contact) {
       newErrors.contact_no = 'Contact number is required';
-    } else if (
-      !(
-        phoneRaw.length === 11 && phoneRaw.startsWith('09') &&
-        /^09\d{9}$/.test(phoneRaw)
-      )
-    ) {
-      newErrors.contact_no = 'Enter a valid PH mobile number (e.g., 09171234567 or (0917) 123-4567)';
+    } else if (!valid) {
+      newErrors.contact_no = 'Invalid Philippine mobile number.';
     }
     if (!formData.municipality.trim()) newErrors.municipality = 'Municipality is required';
     if (!formData.province.trim()) newErrors.province = 'Province is required';
@@ -308,24 +289,68 @@ export default function PatientsPage() {
     if (!formData.allergy.trim()) newErrors.allergy = 'Allergy information is required';
 
     setErrors(newErrors);
-
-    // Scroll to first error field
-    if (Object.keys(newErrors).length > 0) {
-      const firstErrorKey = Object.keys(newErrors)[0];
-      const ref = refs[firstErrorKey];
-      if (ref && ref.current) {
-        ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        ref.current.focus();
-      }
-      return false;
-    }
-    return true;
+    return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validateForm()) {
+      // Wait for setErrors to update, then check latest errors state
+      setTimeout(() => {
+        // Find the first error field and scroll to it smoothly
+        const errorOrder = [
+          'patient_id_no',
+          'last_name',
+          'first_name',
+          'age',
+          'birthdate',
+          'contact_no',
+          'municipality',
+          'province',
+          'medical_history',
+          'medications',
+          'allergy',
+        ];
+        for (const key of errorOrder) {
+          if (errors[key]) {
+            let selector = '';
+            if (key === 'contact_no') selector = 'input[type="tel"]';
+            else if (key === 'birthdate') selector = 'input[type="date"]';
+            else if (key === 'age') selector = 'input[type="number"]';
+            else selector = `input[name="${key}"]`;
+            const el = document.querySelector(selector);
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              (el as HTMLInputElement).focus();
+              break;
+            }
+          }
+        }
+      }, 0);
+      return;
+    }
+    // Normalize and store contact_no
+    let contact = formData.contact_no.replace(/\s|-/g, '').trim();
+    let normalized = '';
+    if (/^09\d{9}$/.test(contact)) {
+      normalized = '+63' + contact.slice(1);
+    } else if (/^\+639\d{9}$/.test(contact)) {
+      normalized = contact;
+    } else if (/^639\d{9}$/.test(contact)) {
+      normalized = '+63' + contact.slice(2);
+    }
+    // ...existing code...
+
+    // Check for duplicate Patient ID in memory
+    const patientIdExists = patients.some(
+      (patient) => patient.patient_id_no === formData.patient_id_no
+    );
+    if (patientIdExists) {
+      setErrors((prev) => ({
+        ...prev,
+        patient_id_no: 'Patient ID already exists',
+      }));
       return;
     }
 
@@ -339,7 +364,7 @@ export default function PatientsPage() {
         age: parseInt(formData.age),
         birthdate: formData.birthdate,
         sex: formData.sex,
-        contact_no: formData.contact_no,
+        contact_no: normalized,
         address_house_no: formData.address_house_no || null,
         address_street: formData.address_street || null,
         address_barangay: formData.address_barangay,
@@ -375,8 +400,15 @@ export default function PatientsPage() {
       setNewPatientName(`${formData.first_name} ${formData.last_name}`);
       setPatientSex(formData.sex as 'Male' | 'Female');
       setShowTestForm(true);
-    } catch (error) {
-      console.error('Error adding patient:', error);
+    } catch (error: any) {
+      if (error?.message === 'Patient ID already exists') {
+        setErrors((prev) => ({
+          ...prev,
+          patient_id_no: 'Patient ID already exists',
+        }));
+      } else {
+        console.error('Error adding patient:', error);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -686,15 +718,12 @@ export default function PatientsPage() {
                 </label>
                 <input
                   type="text"
-                  ref={patientIdRef}
                   value={formData.patient_id_no}
                   onChange={(e) => setFormData({ ...formData, patient_id_no: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                     errors.patient_id_no ? 'border-red-500 bg-red-50' : 'border-gray-300'
                   }`}
                   placeholder="e.g., PAT001"
-                  aria-invalid={!!errors.patient_id_no}
-                  aria-describedby="error-patient-id"
                 />
                 {errors.patient_id_no && <p className="text-red-500 text-sm mt-1">{errors.patient_id_no}</p>}
               </div>
@@ -708,15 +737,12 @@ export default function PatientsPage() {
                 </label>
                 <input
                   type="text"
-                  ref={lastNameRef}
                   value={formData.last_name}
                   onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                     errors.last_name ? 'border-red-500 bg-red-50' : 'border-gray-300'
                   }`}
                   placeholder="Surname"
-                  aria-invalid={!!errors.last_name}
-                  aria-describedby="error-last-name"
                 />
                 {errors.last_name && <p className="text-red-500 text-sm mt-1">{errors.last_name}</p>}
               </div>
@@ -727,15 +753,12 @@ export default function PatientsPage() {
                 </label>
                 <input
                   type="text"
-                  ref={firstNameRef}
                   value={formData.first_name}
                   onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                     errors.first_name ? 'border-red-500 bg-red-50' : 'border-gray-300'
                   }`}
                   placeholder="Given name"
-                  aria-invalid={!!errors.first_name}
-                  aria-describedby="error-first-name"
                 />
                 {errors.first_name && <p className="text-red-500 text-sm mt-1">{errors.first_name}</p>}
               </div>
@@ -762,7 +785,6 @@ export default function PatientsPage() {
                 </label>
                 <input
                   type="number"
-                  ref={ageRef}
                   value={formData.age}
                   onChange={(e) => setFormData({ ...formData, age: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
@@ -770,8 +792,6 @@ export default function PatientsPage() {
                   }`}
                   placeholder="Enter age"
                   min="1"
-                  aria-invalid={!!errors.age}
-                  aria-describedby="error-age"
                 />
                 {errors.age && <p className="text-red-500 text-sm mt-1">{errors.age}</p>}
               </div>
@@ -782,14 +802,11 @@ export default function PatientsPage() {
                 </label>
                 <input
                   type="date"
-                  ref={birthdateRef}
                   value={formData.birthdate}
                   onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
                     errors.birthdate ? 'border-red-500 bg-red-50' : 'border-gray-300'
                   }`}
-                  aria-invalid={!!errors.birthdate}
-                  aria-describedby="error-birthdate"
                 />
                 {errors.birthdate && <p className="text-red-500 text-sm mt-1">{errors.birthdate}</p>}
               </div>
@@ -815,13 +832,13 @@ export default function PatientsPage() {
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Contact No. <span className="text-red-500">*</span>
                 </label>
+                {/* Improved PhoneInputMask component */}
                 <PhoneInputMask
                   value={formData.contact_no}
                   onChange={(val) => setFormData({ ...formData, contact_no: val })}
                   error={errors.contact_no}
-                  inputRef={contactNoRef}
+                  className="mb-0"
                 />
-                {errors.contact_no && <p className="text-red-500 text-sm mt-1">{errors.contact_no}</p>}
               </div>
             </div>
 
@@ -831,7 +848,7 @@ export default function PatientsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    House No., Street
+                    House No.
                   </label>
                   <input
                     type="text"
@@ -874,15 +891,12 @@ export default function PatientsPage() {
                   </label>
                   <input
                     type="text"
-                    ref={municipalityRef}
                     value={formData.municipality}
                     onChange={(e) => setFormData({ ...formData, municipality: e.target.value })}
                     className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                       errors.municipality ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     placeholder="e.g., Makati"
-                    aria-invalid={!!errors.municipality}
-                    aria-describedby="error-municipality"
                   />
                   {errors.municipality && <p className="text-red-500 text-sm mt-1">{errors.municipality}</p>}
                 </div>
@@ -893,15 +907,12 @@ export default function PatientsPage() {
                   </label>
                   <input
                     type="text"
-                    ref={provinceRef}
                     value={formData.province}
                     onChange={(e) => setFormData({ ...formData, province: e.target.value })}
                     className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
                       errors.province ? 'border-red-500 bg-red-50' : 'border-gray-300'
                     }`}
                     placeholder="e.g., NCR"
-                    aria-invalid={!!errors.province}
-                    aria-describedby="error-province"
                   />
                   {errors.province && <p className="text-red-500 text-sm mt-1">{errors.province}</p>}
                 </div>
@@ -917,7 +928,7 @@ export default function PatientsPage() {
                   Medical History <span className="text-red-500">*</span>
                 </label>
                 <textarea
-                  ref={medicalHistoryRef}
+                  name="medical_history"
                   value={formData.medical_history}
                   onChange={(e) => setFormData({ ...formData, medical_history: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
@@ -925,8 +936,6 @@ export default function PatientsPage() {
                   }`}
                   placeholder="e.g., Hypertension, Diabetes"
                   rows={3}
-                  aria-invalid={!!errors.medical_history}
-                  aria-describedby="error-medical-history"
                 />
                 {errors.medical_history && <p className="text-red-500 text-sm mt-1">{errors.medical_history}</p>}
               </div>
@@ -936,7 +945,7 @@ export default function PatientsPage() {
                   Medications <span className="text-red-500">*</span>
                 </label>
                 <textarea
-                  ref={medicationsRef}
+                  name="medications"
                   value={formData.medications}
                   onChange={(e) => setFormData({ ...formData, medications: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
@@ -944,8 +953,6 @@ export default function PatientsPage() {
                   }`}
                   placeholder="e.g., Metoprolol 50mg daily, Atorvastatin 20mg"
                   rows={3}
-                  aria-invalid={!!errors.medications}
-                  aria-describedby="error-medications"
                 />
                 {errors.medications && <p className="text-red-500 text-sm mt-1">{errors.medications}</p>}
               </div>
@@ -955,7 +962,7 @@ export default function PatientsPage() {
                   Allergy <span className="text-red-500">*</span>
                 </label>
                 <textarea
-                  ref={allergyRef}
+                  name="allergy"
                   value={formData.allergy}
                   onChange={(e) => setFormData({ ...formData, allergy: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
@@ -963,8 +970,6 @@ export default function PatientsPage() {
                   }`}
                   placeholder="e.g., Penicillin, None"
                   rows={2}
-                  aria-invalid={!!errors.allergy}
-                  aria-describedby="error-allergy"
                 />
                 {errors.allergy && <p className="text-red-500 text-sm mt-1">{errors.allergy}</p>}
               </div>
@@ -1317,12 +1322,12 @@ export default function PatientsPage() {
                 {/* Patient Name (Read-only) */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Patient Name
+                    Patient Name <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     value={newPatientName}
-                    disabled
+                    readOnly
                     className="w-full px-4 py-2 border rounded-lg bg-gray-100 text-gray-800 cursor-not-allowed"
                   />
                 </div>
@@ -1386,7 +1391,6 @@ export default function PatientsPage() {
                     <label className="block text-sm font-semibold text-gray-700">
                       CBC Components <span className="text-red-500">*</span>
                     </label>
-                    
                     <div className="grid grid-cols-1 gap-3">
                       <div>
                         <label className="text-xs font-semibold text-gray-600">Neutrophils (%)</label>
@@ -1397,9 +1401,7 @@ export default function PatientsPage() {
                           placeholder="45-75"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 45 - 75%</p>
                       </div>
-                      
                       <div>
                         <label className="text-xs font-semibold text-gray-600">Lymphocytes (%)</label>
                         <input
@@ -1409,9 +1411,7 @@ export default function PatientsPage() {
                           placeholder="16-46"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 16 - 46%</p>
                       </div>
-                      
                       <div>
                         <label className="text-xs font-semibold text-gray-600">Monocytes (%)</label>
                         <input
@@ -1421,9 +1421,7 @@ export default function PatientsPage() {
                           placeholder="4-11"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 4 - 11%</p>
                       </div>
-                      
                       <div>
                         <label className="text-xs font-semibold text-gray-600">Eosinophils (%)</label>
                         <input
@@ -1433,9 +1431,7 @@ export default function PatientsPage() {
                           placeholder="0-8"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0 - 8%</p>
                       </div>
-                      
                       <div>
                         <label className="text-xs font-semibold text-gray-600">Basophils (%)</label>
                         <input
@@ -1445,7 +1441,6 @@ export default function PatientsPage() {
                           placeholder="0-3"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0 - 3%</p>
                       </div>
                     </div>
                   </div>

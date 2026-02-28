@@ -110,13 +110,11 @@ interface TestResult {
 
 const LAB_SECTIONS = [
   'BLOOD BANK',
-  'ISBB',
   'HEMATOLOGY',
   'CLINICAL CHEMISTRY',
   'MICROBIOLOGY',
-  'IMMUNOLOGY',
+  'IMMUNOLOGY/SEROLOGY',
   'HISTOPATHOLOGY',
-  'SEROLOGY',
 ];
 
 // Dynamically generate TESTS_BY_SECTION from TEST_REFERENCE_RANGES
@@ -433,20 +431,25 @@ export default function TestResultsPage() {
           </h2>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Patient Name */}
+            {/* Patient Name Dropdown */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Patient Name <span className="text-red-500">*</span>
+                Select Patient <span className="text-red-500">*</span>
               </label>
-              <input
-                type="text"
+              <select
                 value={patientName}
-                onChange={(e) => setPatientName(e.target.value)}
-                placeholder="Enter patient name"
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white placeholder-gray-500 ${
+                onChange={e => setPatientName(e.target.value)}
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
                   errors.patientName ? 'border-red-500' : 'border-gray-300'
                 }`}
-              />
+              >
+                <option value="">--Select Patient--</option>
+                {patients.map(p => (
+                  <option key={p.id} value={`${p.first_name} ${p.last_name}`}>
+                    {p.patient_id_no} - {p.first_name} {p.last_name}
+                  </option>
+                ))}
+              </select>
               {errors.patientName && (
                 <p className="text-red-500 text-sm mt-1">{errors.patientName}</p>
               )}
