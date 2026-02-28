@@ -275,7 +275,19 @@ export const fetchTestResults = async () => {
   return data || [];
 };
 
-export const addTestResult = async (result: any, currentUser?: any) => {
+// Tests whose components are billed as a single parent test (e.g. CBC components → one CBC billing)
+const BILLING_PARENT_TESTS: Record<string, string[]> = {
+  HEMATOLOGY: ['Neutrophils', 'Lymphocytes', 'Monocytes', 'Eosinophils', 'Basophils'], // CBC components
+  'CLINICAL MICROSCOPY': ['UA Color', 'UA Transparency', 'UA pH', 'UA Protein/Glucose', 'UA Bilirubin/Ketone', 'UA Urobilinogen', 'UA WBC (Microscopic)', 'UA RBC (Microscopic)', 'UA Bacteria/Casts/Crystals'], // Routine Urinalysis
+  MICROBIOLOGY: ['Culture', 'Preliminary Report', 'Final Report', 'Sensitivity (Antibiogram)'], // Culture and Sensitivity
+};
+const BILLING_PARENT_NAMES: Record<string, string> = {
+  HEMATOLOGY: 'CBC',
+  'CLINICAL MICROSCOPY': 'Routine Urinalysis (UA)',
+  MICROBIOLOGY: 'Culture and Sensitivity',
+};
+
+export const addTestResult = async (result: any, currentUser?: any, skipBilling?: boolean) => {
   if (USE_MOCK_DATA) {
     const newResult = {
       id: `result-${Date.now()}`,
@@ -286,6 +298,21 @@ export const addTestResult = async (result: any, currentUser?: any) => {
       updated_at: new Date().toISOString(),
     };
     MOCK_TEST_RESULTS.push(newResult);
+
+    // Skip billing for component tests - caller will add single parent billing
+    const isComponent = BILLING_PARENT_TESTS[result.section]?.includes(result.test_name);
+    if (skipBilling || isComponent) {
+      await logActivity({
+        user_id: currentUser?.id,
+        user_name: currentUser?.full_name || 'Unknown User',
+        encryption_key: currentUser?.encryption_key || '',
+        action: 'edit',
+        resource: `${result.test_name} - ${result.patient_name}`,
+        resource_type: 'Test Result',
+        description: `Created test result: ${result.test_name} for patient ${result.patient_name} in section ${result.section}${isComponent ? ' (component of ' + (BILLING_PARENT_NAMES[result.section] || 'parent test') + ')' : ''}`,
+      });
+      return newResult;
+    }
 
     // Automatically create billing entry for the test
     const testCost = TEST_PRICING[result.section]?.[result.test_name] || 300;
@@ -678,9 +705,12 @@ export const getTestPrice = (testName: string, section: string): number | null =
 };
 
 export const enrichTestResultWithBilling = (result: any, billings: any[] = []) => {
-  const price = getTestPrice(result.test_name, result.section);
+  // CBC/components: use parent test for pricing and billing lookup
+  const isComponent = BILLING_PARENT_TESTS[result.section]?.includes(result.test_name);
+  const billingTestName = isComponent ? (BILLING_PARENT_NAMES[result.section] || result.test_name) : result.test_name;
+  const price = getTestPrice(billingTestName, result.section);
   const billing = billings.find(b => 
-    b.test_name === result.test_name && 
+    b.test_name === billingTestName && 
     b.patient_name === result.patient_name
   );
   const abnormal = getAbnormalStatus(result.result_value, result.test_name, result.section);

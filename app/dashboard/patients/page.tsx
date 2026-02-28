@@ -157,7 +157,16 @@ export default function PatientsPage() {
   // Hemoglobin State (single value based on patient sex)
   const [hemoglobinValue, setHemoglobinValue] = useState('');
 
-  // PT/INR/aPTT State
+  // Hematocrit State (single value based on patient sex)
+  const [hematocritValue, setHematocritValue] = useState('');
+
+  // Peripheral Blood Smear (free text)
+  const [peripheralSmearValue, setPeripheralSmearValue] = useState('');
+
+  // Platelet Count
+  const [plateletCountValue, setPlateletCountValue] = useState('');
+
+  // PT/INR, PTT State
   const [coagulationValues, setCoagulationValues] = useState({
     pt: '',
     inr: '',
@@ -422,16 +431,10 @@ export default function PatientsPage() {
   };
 
   // Filter tests based on patient sex - hide opposite sex variants
-  const currentTests = selectedSection 
-    ? (TESTS_BY_SECTION[selectedSection] || []).filter((test) => {
-        // Remove opposite sex variants
-        if (patientSex === 'Male' && test.name.includes('(Female)')) return false;
-        if (patientSex === 'Female' && test.name.includes('(Male)')) return false;
-        // Remove explicit Hemoglobin (Male/Female) since "Hemoglobin" handles it
-        if (test.name === 'Hemoglobin (Male)' || test.name === 'Hemoglobin (Female)') return false;
-        return true;
-      })
-    : [];
+  const HEMATOLOGY_MAIN_TESTS = ['CBC', 'ESR', 'PT/INR, PTT'];
+  const currentTests = selectedSection === 'HEMATOLOGY'
+    ? (TESTS_BY_SECTION['HEMATOLOGY'] || []).filter(test => HEMATOLOGY_MAIN_TESTS.includes(test.name))
+    : (selectedSection ? TESTS_BY_SECTION[selectedSection] || [] : []);
 
   const validateTestForm = () => {
     const newErrors: Record<string, string> = {};
@@ -443,6 +446,18 @@ export default function PatientsPage() {
       if (!cbcValues.neutrophils || !cbcValues.lymphocytes || !cbcValues.monocytes || !cbcValues.eosinophils || !cbcValues.basophils) {
         newErrors.cbc = 'All CBC components are required';
       }
+      if (!rbcValues.mcv || !rbcValues.mch || !rbcValues.rdw) {
+        newErrors.rbc = 'MCV, MCH, and RDW are required for CBC';
+      }
+      if (!hemoglobinValue) {
+        newErrors.hemoglobin = 'Hemoglobin value is required for CBC';
+      }
+      if (!hematocritValue) {
+        newErrors.hematocrit = 'Hematocrit value is required for CBC';
+      }
+      if (!plateletCountValue) {
+        newErrors.platelet = 'Platelet count is required for CBC';
+      }
     } else if (selectedTest === 'RBC Indices (MCV, MCH, RDW)') {
       if (!rbcValues.mcv || !rbcValues.mch || !rbcValues.rdw) {
         newErrors.rbc = 'All RBC indices are required';
@@ -451,7 +466,7 @@ export default function PatientsPage() {
       if (!hemoglobinValue) {
         newErrors.hemoglobin = 'Hemoglobin value is required';
       }
-    } else if (selectedTest === 'PT/INR/aPTT') {
+    } else if (selectedTest === 'PT/INR, PTT') {
       if (!coagulationValues.pt || !coagulationValues.inr || !coagulationValues.aptt) {
         newErrors.coagulation = 'All coagulation values (PT, INR, aPTT) are required';
       }
@@ -486,7 +501,7 @@ export default function PatientsPage() {
     
     try {
       if (selectedTest === 'CBC') {
-        // Submit each CBC component separately
+        // Save CBC as ONE test result (not 5 separate rows)
         const cbcComponents = [
           { name: 'Neutrophils', value: cbcValues.neutrophils, range: '45 - 75', unit: '%' },
           { name: 'Lymphocytes', value: cbcValues.lymphocytes, range: '16 - 46', unit: '%' },
@@ -495,17 +510,52 @@ export default function PatientsPage() {
           { name: 'Basophils', value: cbcValues.basophils, range: '0 - 3', unit: '%' },
         ];
 
-        for (const component of cbcComponents) {
-          await addTestResult({
+        const testDetailsCbc = currentTests.find((t) => t.name === 'CBC');
+        const sexLabel = patientSex === 'Male' ? 'Male' : 'Female';
+        const cbcLines = [
+          ...cbcComponents.map((c) => `${c.name}: ${c.value}${c.unit}`),
+          `MCV: ${rbcValues.mcv} fL`,
+          `MCH: ${rbcValues.mch} pg`,
+          `RDW: ${rbcValues.rdw} %`,
+          `Hemoglobin (${sexLabel}): ${hemoglobinValue} g/dL`,
+          `Hematocrit (${sexLabel}): ${hematocritValue} %`,
+          `Platelet Count: ${plateletCountValue} x10^9/L`,
+          ...(peripheralSmearValue ? [`Peripheral Blood Smear: ${peripheralSmearValue}`] : []),
+        ];
+        const cbcResultValue = cbcLines.join('\n');
+
+        await addTestResult(
+          {
             patient_name: newPatientName,
             section: selectedSection,
-            test_name: component.name,
-            result_value: component.value,
-            reference_range: component.range,
-            unit: component.unit,
-          }, user);
-          
-          savedTests.push(component);
+            test_name: 'CBC',
+            result_value: cbcResultValue,
+            reference_range: testDetailsCbc?.referenceRange || testDetails.referenceRange,
+            unit: '',
+          },
+          user,
+        );
+
+        // Success summary can still list components
+        for (const component of cbcComponents) savedTests.push(component);
+        savedTests.push({ name: 'MCV', value: rbcValues.mcv, range: '80 - 100', unit: 'fL' });
+        savedTests.push({ name: 'MCH', value: rbcValues.mch, range: '27 - 31', unit: 'pg' });
+        savedTests.push({ name: 'RDW', value: rbcValues.rdw, range: '11.5 - 14.5', unit: '%' });
+        savedTests.push({
+          name: `Hemoglobin (${sexLabel})`,
+          value: hemoglobinValue,
+          range: sexLabel === 'Male' ? '14.0 - 17.0' : '12.0 - 15.0',
+          unit: 'g/dL',
+        });
+        savedTests.push({
+          name: `Hematocrit (${sexLabel})`,
+          value: hematocritValue,
+          range: sexLabel === 'Male' ? '40 - 54' : '37 - 47',
+          unit: '%',
+        });
+        savedTests.push({ name: 'Platelet Count', value: plateletCountValue, range: '150 - 450', unit: 'x10^9/L' });
+        if (peripheralSmearValue) {
+          savedTests.push({ name: 'Peripheral Blood Smear', value: peripheralSmearValue, range: '', unit: '' });
         }
       } else if (selectedTest === 'RBC Indices (MCV, MCH, RDW)') {
         // Submit each RBC Indices component separately
@@ -547,26 +597,30 @@ export default function PatientsPage() {
           range: referenceRange,
           unit: 'g/dL',
         });
-      } else if (selectedTest === 'PT/INR/aPTT') {
-        // Submit each coagulation component separately
-        const coagulationComponents = [
-          { name: 'PT', value: coagulationValues.pt, range: '11.0 - 13.5', unit: 'seconds' },
-          { name: 'INR', value: coagulationValues.inr, range: '0.8 - 1.2', unit: '' },
-          { name: 'aPTT', value: coagulationValues.aptt, range: '25.0 - 35.0', unit: 'seconds' },
+      } else if (selectedTest === 'PT/INR, PTT') {
+        // Save coagulation as ONE test result row (not 3 separate rows)
+        const testDetailsCoag = currentTests.find((t) => t.name === 'PT/INR, PTT') || testDetails;
+        const coagLines = [
+          `PT: ${coagulationValues.pt} seconds`,
+          `INR: ${coagulationValues.inr}`,
+          `aPTT: ${coagulationValues.aptt} seconds`,
         ];
 
-        for (const component of coagulationComponents) {
-          await addTestResult({
+        await addTestResult(
+          {
             patient_name: newPatientName,
             section: selectedSection,
-            test_name: component.name,
-            result_value: component.value,
-            reference_range: component.range,
-            unit: component.unit,
-          }, user);
-          
-          savedTests.push(component);
-        }
+            test_name: 'PT/INR, PTT',
+            result_value: coagLines.join('\n'),
+            reference_range: testDetailsCoag.referenceRange,
+            unit: '',
+          },
+          user,
+        );
+
+        savedTests.push({ name: 'PT', value: coagulationValues.pt, range: '11.0 - 13.5', unit: 'seconds' });
+        savedTests.push({ name: 'INR', value: coagulationValues.inr, range: '0.8 - 1.2', unit: '' });
+        savedTests.push({ name: 'aPTT', value: coagulationValues.aptt, range: '25.0 - 35.0', unit: 'seconds' });
       } else if (selectedTest === 'Routine Urinalysis (UA)') {
         // Submit each urinalysis component separately
         const urinalysisComponents = [
@@ -654,6 +708,9 @@ export default function PatientsPage() {
     setCbcValues({ neutrophils: '', lymphocytes: '', monocytes: '', eosinophils: '', basophils: '' });
     setRbcValues({ mcv: '', mch: '', rdw: '' });
     setHemoglobinValue('');
+    setHematocritValue('');
+    setPeripheralSmearValue('');
+    setPlateletCountValue('');
     setCoagulationValues({ pt: '', inr: '', aptt: '' });
     setUrinalysisValues({ color: '', transparency: '', pH: '', proteinGlucose: '', bilirubinKetone: '', urobilinogen: '', wbcMicroscopic: '', rbcMicroscopic: '', bacteriaCastsCrystals: '' });
     setCultureSensitivityValues({ culture: '', preliminaryReport: '', finalReport: '', sensitivity: '' });
@@ -1389,8 +1446,11 @@ export default function PatientsPage() {
                 {selectedTest === 'CBC' && (
                   <div className="space-y-4">
                     <label className="block text-sm font-semibold text-gray-700">
+                    
                       CBC Components <span className="text-red-500">*</span>
+                        
                     </label>
+                             <span className="text-sm font-bold text-gray-700">WBC Count</span>   
                     <div className="grid grid-cols-1 gap-3">
                       <div>
                         <label className="text-xs font-semibold text-gray-600">Neutrophils (%)</label>
@@ -1443,6 +1503,117 @@ export default function PatientsPage() {
                         />
                       </div>
                     </div>
+
+                    <div className="pt-3 border-t border-gray-200 space-y-3">
+                      <label className="block text-sm font-semibold text-gray-700">
+                        Red Blood Cell Indices (MCV, MCH, RDW) <span className="text-red-500">*</span>
+                      </label>
+                      <div className="grid grid-cols-1 gap-3">
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600">Mean Corpuscular Volume (MCV) (fL)</label>
+                          <input
+                            type="text"
+                            value={rbcValues.mcv}
+                            onChange={(e) => setRbcValues({ ...rbcValues, mcv: e.target.value })}
+                            placeholder="80 - 100"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Reference Range: 80 - 100 fL</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600">Mean Corpuscular Hemoglobin (MCH) (pg)</label>
+                          <input
+                            type="text"
+                            value={rbcValues.mch}
+                            onChange={(e) => setRbcValues({ ...rbcValues, mch: e.target.value })}
+                            placeholder="27 - 31"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Reference Range: 27 - 31 pg</p>
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-gray-600">Red Cell Distribution Width (RDW) (%)</label>
+                          <input
+                            type="text"
+                            value={rbcValues.rdw}
+                            onChange={(e) => setRbcValues({ ...rbcValues, rdw: e.target.value })}
+                            placeholder="11.5 - 14.5"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Reference Range: 11.5% - 14.5%</p>
+                        </div>
+                      </div>
+                      {testErrors.rbc && <p className="text-red-500 text-sm">{testErrors.rbc}</p>}
+                    </div>
+
+                    <div className="pt-3 border-t border-gray-200 space-y-3">
+                      <label className="block text-sm font-semibold text-gray-700">
+                        Hemoglobin (Hb/Hgb) <span className="text-red-500">*</span>
+                      </label>
+                      <div>
+                        <input
+                          type="text"
+                          value={hemoglobinValue}
+                          onChange={(e) => setHemoglobinValue(e.target.value)}
+                          placeholder={patientSex === 'Male' ? '14.0 - 17.0' : '12.0 - 15.0'}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: {patientSex === 'Male' ? '14.0 - 17.0 g/dL' : '12.0 - 15.0 g/dL'}
+                        </p>
+                        {testErrors.hemoglobin && <p className="text-red-500 text-sm mt-1">{testErrors.hemoglobin}</p>}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-gray-200 space-y-3">
+                      <label className="block text-sm font-semibold text-gray-700">
+                        Hematocrit (HCT) <span className="text-red-500">*</span>
+                      </label>
+                      <div>
+                        <input
+                          type="text"
+                          value={hematocritValue}
+                          onChange={(e) => setHematocritValue(e.target.value)}
+                          placeholder={patientSex === 'Male' ? '40 - 54' : '37 - 47'}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: {patientSex === 'Male' ? '40% - 54%' : '37% - 47%'}
+                        </p>
+                        {testErrors.hematocrit && <p className="text-red-500 text-sm mt-1">{testErrors.hematocrit}</p>}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-gray-200 space-y-3">
+                      <label className="block text-sm font-semibold text-gray-700">
+                        Peripheral Blood Smear
+                      </label>
+                      <textarea
+                        value={peripheralSmearValue}
+                        onChange={(e) => setPeripheralSmearValue(e.target.value)}
+                        placeholder="Enter findings (optional)"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white min-h-[80px]"
+                      />
+                    </div>
+
+                    <div className="pt-3 border-t border-gray-200 space-y-3">
+                      <label className="block text-sm font-semibold text-gray-700">
+                        Platelet Count <span className="text-red-500">*</span>
+                      </label>
+                      <div>
+                        <input
+                          type="text"
+                          value={plateletCountValue}
+                          onChange={(e) => setPlateletCountValue(e.target.value)}
+                          placeholder="150 - 450"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Reference Range: 150 - 450 x 10⁹/L</p>
+                        {testErrors.platelet && <p className="text-red-500 text-sm mt-1">{testErrors.platelet}</p>}
+                      </div>
+                    </div>
+
+                    {testErrors.cbc && <p className="text-red-500 text-sm">{testErrors.cbc}</p>}
                   </div>
                 )}
 
@@ -1519,8 +1690,8 @@ export default function PatientsPage() {
                   </div>
                 )}
 
-                {/* Result Value - PT/INR/aPTT Special Case */}
-                {selectedTest === 'PT/INR/aPTT' && (
+                {/* Result Value - PT/INR, PTT Special Case */}
+                {selectedTest === 'PT/INR, PTT' && (
                   <div className="space-y-4">
                     <label className="block text-sm font-semibold text-gray-700">
                       Coagulation Values <span className="text-red-500">*</span>
@@ -1563,6 +1734,7 @@ export default function PatientsPage() {
                         <p className="text-xs text-gray-500 mt-1">Reference Range: 25.0 - 35.0 seconds</p>
                       </div>
                     </div>
+                    {testErrors.coagulation && <p className="text-red-500 text-sm">{testErrors.coagulation}</p>}
                   </div>
                 )}
 
@@ -1771,7 +1943,7 @@ export default function PatientsPage() {
                 )}
 
                 {/* Result Value - Regular Tests */}
-                {selectedTest && selectedTest !== 'CBC' && selectedTest !== 'RBC Indices (MCV, MCH, RDW)' && selectedTest !== 'Hemoglobin' && selectedTest !== 'PT/INR/aPTT' && selectedTest !== 'Routine Urinalysis (UA)' && selectedTest !== 'Culture and Sensitivity' && (
+                {selectedTest && selectedTest !== 'CBC' && selectedTest !== 'RBC Indices (MCV, MCH, RDW)' && selectedTest !== 'Hemoglobin' && selectedTest !== 'PT/INR, PTT' && selectedTest !== 'Routine Urinalysis (UA)' && selectedTest !== 'Culture and Sensitivity' && (
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Result Value <span className="text-red-500">*</span>
