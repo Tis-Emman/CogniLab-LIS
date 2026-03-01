@@ -32,7 +32,7 @@ export default function ProfilePage() {
     role: user?.role === 'faculty' ? 'Laboratory Director' : 'Medical Technologist',
     department: user?.department || 'General',
     avatar: user?.role === 'faculty' ? '👨‍⚕️' : '👤',
-    credentials: user?.role === 'faculty' ? ['MD', 'DPSP'] : ['BSMT'],
+    credentials: user?.role === 'faculty' ? ['RMT', 'RMT'] : ['RMT'],
     certifications: user?.role === 'faculty' 
       ? ['Clinical Pathology Specialist', 'ISO 15189 Quality Manager']
       : [`Certified in ${user?.department || 'Laboratory Science'}`],
@@ -55,7 +55,7 @@ export default function ProfilePage() {
         role: user.role === 'faculty' ? 'Laboratory Director' : 'Medical Technologist',
         department: user.department,
         avatar: user.role === 'faculty' ? '👨‍⚕️' : '👤',
-        credentials: user.role === 'faculty' ? ['MD', 'DPSP'] : ['BSMT'],
+        credentials: user.role === 'faculty' ? ['RMT'] : ['RMT'],
         certifications: user.role === 'faculty'
           ? ['Clinical Pathology Specialist', 'ISO 15189 Quality Manager']
           : [`Certified in ${user.department}`],
@@ -263,7 +263,7 @@ export default function ProfilePage() {
               )}
             </div>
             <div>
-              <label className="text-sm font-semibold text-gray-700 mb-2 block">City</label>
+              <label className="text-sm font-semibold text-gray-700 mb-2 block">City/Municipality</label>
               {isEditing ? (
                 <input
                   type="text"

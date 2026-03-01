@@ -68,13 +68,7 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     { label: 'Profile', path: '/dashboard/profile', icon: User },
   ];
 
-  const adminItems =
-    user?.role === 'faculty'
-      ? [
-          { label: 'Manage Users', path: '/admin/users', icon: Shield },
-          { label: 'Audit Log', path: '/admin/audit-log', icon: Activity },
-        ]
-      : [];
+
 
   return (
     <>
@@ -158,29 +152,6 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
             );
           })}
 
-          {/* Admin Section Divider */}
-          {(isOpen || isMobile) && adminItems.length > 0 && <div className="border-t border-[#8BA49A] my-4"></div>}
-
-          {/* Admin Items */}
-          {(isOpen || isMobile) && adminItems.length > 0 && <p className="text-xs text-[#8BA49A] font-semibold px-4 py-2">ADMINISTRATION</p>}
-          {adminItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.path}
-                href={item.path}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition ${
-                  isActive(item.path)
-                    ? 'bg-[#8BA49A] text-white'
-                    : 'text-[#CBDED3] hover:bg-[#5A7669] hover:text-white'
-                }`}
-                title={!isOpen && !isMobile ? item.label : ''}
-              >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                {(isOpen || isMobile) && <span className="text-sm font-medium">{item.label}</span>}
-              </Link>
-            );
-          })}
         </nav>
 
         {/* Logout Button */}
