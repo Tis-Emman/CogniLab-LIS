@@ -36,21 +36,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     let isEffectActive = true;
 
-    // MOCK MODE: Auto-login as the faculty user from MOCK_USERS
+    // MOCK MODE: Don't auto-login, just stop loading so the login page shows
     if (USE_MOCK_DATA) {
       console.log('🎭 Using MOCK authentication');
-      const mockFaculty = MOCK_USERS.find((u) => u.role === 'faculty') || MOCK_USERS[0];
-      const mockUser: User = {
-        id: mockFaculty.id,
-        email: mockFaculty.email,
-        full_name: mockFaculty.full_name,
-        role: mockFaculty.role,
-        department: mockFaculty.department,
-        encryption_key: mockFaculty.encryption_key,
-        join_date: mockFaculty.join_date,
-      };
-      setUser(mockUser);
-      setAuthUser({ id: mockFaculty.id, email: mockFaculty.email });
       setLoading(false);
       return;
     }
