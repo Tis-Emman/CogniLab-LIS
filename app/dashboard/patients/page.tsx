@@ -1,12 +1,26 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import PhoneInputMask from '@/components/PhoneInputMask';
-import { useRouter } from 'next/navigation';
-import { Plus, User, ArrowRight, Trash2, Loader, X, CheckCircle } from 'lucide-react';
-import { fetchPatients, addPatient, updatePatient, deletePatient, addTestResult } from '@/lib/database';
-import { useAuth } from '@/lib/authContext';
-import { TEST_REFERENCE_RANGES } from '@/lib/mockData';
+import { useState, useEffect } from "react";
+import PhoneInputMask from "@/components/PhoneInputMask";
+import { useRouter } from "next/navigation";
+import {
+  Plus,
+  User,
+  ArrowRight,
+  Trash2,
+  Loader,
+  X,
+  CheckCircle,
+} from "lucide-react";
+import {
+  fetchPatients,
+  addPatient,
+  updatePatient,
+  deletePatient,
+  addTestResult,
+} from "@/lib/database";
+import { useAuth } from "@/lib/authContext";
+import { TEST_REFERENCE_RANGES } from "@/lib/mockData";
 
 interface Patient {
   id: string;
@@ -31,70 +45,317 @@ interface Patient {
 }
 
 const LAB_SECTIONS = [
-  'BLOOD BANK',
-  'HEMATOLOGY',
-  'CLINICAL MICROSCOPY',
-  'CLINICAL CHEMISTRY',
-  'MICROBIOLOGY',
-  'IMMUNOLOGY/SEROLOGY',
-  'HISTOPATHOLOGY',
+  "BLOOD BANK",
+  "HEMATOLOGY",
+  "CLINICAL MICROSCOPY",
+  "CLINICAL CHEMISTRY",
+  "MICROBIOLOGY",
+  "IMMUNOLOGY/SEROLOGY",
+  "HISTOPATHOLOGY",
 ];
 
 // Dynamically generate TESTS_BY_SECTION from TEST_REFERENCE_RANGES
-const TESTS_BY_SECTION: Record<string, { name: string; referenceRange: string; unit: string }[]> = Object.keys(
-  TEST_REFERENCE_RANGES,
-).reduce((acc, section) => {
-  acc[section] = Object.entries(TEST_REFERENCE_RANGES[section]).map(([testName, range]) => ({
-    name: testName,
-    referenceRange: range.normal || `${range.min || ''} - ${range.max || ''}`,
-    unit: range.unit,
-  }));
-  return acc;
-}, {} as Record<string, { name: string; referenceRange: string; unit: string }[]>);
+const TESTS_BY_SECTION: Record<
+  string,
+  { name: string; referenceRange: string; unit: string }[]
+> = Object.keys(TEST_REFERENCE_RANGES).reduce(
+  (acc, section) => {
+    acc[section] = Object.entries(TEST_REFERENCE_RANGES[section]).map(
+      ([testName, range]) => ({
+        name: testName,
+        referenceRange:
+          range.normal || `${range.min || ""} - ${range.max || ""}`,
+        unit: range.unit,
+      }),
+    );
+    return acc;
+  },
+  {} as Record<
+    string,
+    { name: string; referenceRange: string; unit: string }[]
+  >,
+);
 
 // Predefined dropdown options for specific tests
 const TEST_DROPDOWN_OPTIONS: Record<string, string[]> = {
-  'ABO Blood Typing': ['Type A', 'Type B', 'Type AB', 'Type O'],
-  'Rh Typing': ['Rh Positive (D+)', 'Rh Negative (D-)'],
-  'Crossmatching': ['Compatible', 'Incompatible', 'Least Compatible'],
-  'Antibody Screening': ['Positive', 'Negative'],
-  'Infectious Disease Screening': ['Non-Reactive for any infectious disease', 'Reactive for HIV', 'Reactive for HBV', 'Reactive for HCV', 'Reactive for Syphilis', 'Reactive for Malaria'],
-  'Culture': ['No growth', 'Growth detected'],
-  'Sensitivity': ['S (Susceptible)', 'I (Intermediate)', 'R (Resistant)'],
-  'Gram Staining': [
-    'Negative/Normal',
-    'Positive - Gram Positive Cocci',
-    'Positive - Gram Positive Bacilli',
-    'Positive - Gram Negative Cocci',
-    'Positive - Gram Negative Bacilli',
+  "ABO Blood Typing": ["Type A", "Type B", "Type AB", "Type O"],
+  "Rh Typing": ["Rh Positive (D+)", "Rh Negative (D-)"],
+  Crossmatching: ["Compatible", "Incompatible", "Least Compatible"],
+  "Antibody Screening": ["Positive", "Negative"],
+  "Infectious Disease Screening": [
+    "Non-Reactive for any infectious disease",
+    "Reactive for HIV",
+    "Reactive for HBV",
+    "Reactive for HCV",
+    "Reactive for Syphilis",
+    "Reactive for Malaria",
   ],
-  'Pus Cells (WBCs)': ['Occasional', 'Few', 'Moderate', 'Many'],
-  'India Ink': ['Positive (Encapsulated yeast cells seen)', 'Negative (No encapsulated yeast cells seen)'],
-  'Wet Mount': ['Normal/Negative', 'Abnormal'],
-  'KOH Mount': ['Negative', 'Positive'],
-  'Pregnancy Test (hCG)': ['Negative', 'Positive'],
-  'Fecal Occult Blood Test': ['Negative', 'Positive'],
-  'Fecalysis - Ova or Parasite': ['Negative', 'Positive - Ascaris', 'Positive - Hookworm', 'Positive - Trichuris'],
-  'Kidney Biopsy': ['Normal/Unremarkable', 'Active disease', 'Scarring'],
-  'Bone Biopsy': ['Normal', 'Anormal', 'Inconclusive'],
-  'Liver Biopsy Fibrosis': ['F0: No fibrosis (Healthy)', 'F1: Portal fibrosis without septa (Mild fibrosis)', 'F2: Portal fibrosis with few septa (Moderate/Significant fibrosis)', 'F3: Numerous septa without cirrhosis (Severe fibrosis)', 'F4: Cirrhosis (Advanced scarring)'],
-  'Liver Biopsy Activity': ['A0: No activity', 'A1: Minimal/mild activity', 'A2: Moderate activity', 'A3: Severe activity'],
-  'Fecal Occult Blood Test (FOBT)': ['Positive', 'Negative', 'Invalid'],
-  'Pregnancy Test (PT)': ['Positive', 'Negative', 'Invalid'],
+  Culture: ["No growth", "Growth detected"],
+  Sensitivity: ["S (Susceptible)", "I (Intermediate)", "R (Resistant)"],
+  "Gram Staining": [
+    "Negative/Normal",
+    "Positive - Gram Positive Cocci",
+    "Positive - Gram Positive Bacilli",
+    "Positive - Gram Negative Cocci",
+    "Positive - Gram Negative Bacilli",
+  ],
+  "Pus Cells (WBCs)": ["Occasional", "Few", "Moderate", "Many"],
+  "India Ink": [
+    "Positive (Encapsulated yeast cells seen)",
+    "Negative (No encapsulated yeast cells seen)",
+  ],
+  "Wet Mount": ["Normal/Negative", "Abnormal"],
+  "KOH Mount": ["Negative", "Positive"],
+  "Pregnancy Test (hCG)": ["Negative", "Positive"],
+  "Fecal Occult Blood Test": ["Negative", "Positive"],
+  "Fecalysis - Ova or Parasite": [
+    "Negative",
+    "Positive - Ascaris",
+    "Positive - Hookworm",
+    "Positive - Trichuris",
+  ],
+  "Kidney Biopsy": ["Normal/Unremarkable", "Active disease", "Scarring"],
+  "Bone Biopsy": ["Normal", "Anormal", "Inconclusive"],
+  "Liver Biopsy Fibrosis": [
+    "F0: No fibrosis (Healthy)",
+    "F1: Portal fibrosis without septa (Mild fibrosis)",
+    "F2: Portal fibrosis with few septa (Moderate/Significant fibrosis)",
+    "F3: Numerous septa without cirrhosis (Severe fibrosis)",
+    "F4: Cirrhosis (Advanced scarring)",
+  ],
+  "Liver Biopsy Activity": [
+    "A0: No activity",
+    "A1: Minimal/mild activity",
+    "A2: Moderate activity",
+    "A3: Severe activity",
+  ],
+  "Fecal Occult Blood Test (FOBT)": ["Positive", "Negative", "Invalid"],
+  "Pregnancy Test (PT)": ["Positive", "Negative", "Invalid"],
+  "HBsAg (Hepa B Surface Ag) - Qualitative": [
+    "Positive/Reactive",
+    "Negative/Non-reactive",
+  ],
+  "Dengue NS1Ag": ["Positive/Reactive", "Negative/Non-reactive"],
+  "Leptospirosis Test": ["Positive/Reactive", "Negative/Non-reactive"],
+  "Syphilis Test (Qualitative)": ["Positive/Reactive", "Negative/Non-reactive"],
   // Routine Fecalysis (FA) Component
-  'Routine Fecalysis (FA)': ['No Ova or Parasite seen', 'Scant/Few Ova or Parasite seen', 'Moderate Ova or Parasite seen', 'Many/Numerous Ova or Parasite seen'],
+  "Routine Fecalysis (FA)": [
+    "No Ova or Parasite seen",
+    "Scant/Few Ova or Parasite seen",
+    "Moderate Ova or Parasite seen",
+    "Many/Numerous Ova or Parasite seen",
+  ],
   // Routine Urinalysis (UA) Components
-  'UA_Color': ['Clear', 'Pale Yellow', 'Amber'],
-  'UA_Transparency': ['Clear', 'Slightly Turbid', 'Turbid', 'Very Turbid'],
-  'UA_Protein_Glucose': ['Positive', 'Negative'],
-  'UA_Bilirubin_Ketone': ['Positive', 'Negative'],
-  'UA_Bacteria_Casts_Crystals': ['None', 'Rare', 'Few', 'Many'],
+  UA_Color: ["Clear", "Pale Yellow", "Amber"],
+  UA_Transparency: ["Clear", "Slightly Turbid", "Turbid", "Very Turbid"],
+  UA_Protein_Glucose: ["Positive", "Negative"],
+  UA_Bilirubin_Ketone: ["Positive", "Negative"],
+  UA_Bacteria_Casts_Crystals: ["None", "Rare", "Few", "Many"],
 };
 
 // Custom placeholder hints for specific tests
 const TEST_PLACEHOLDER_HINTS: Record<string, string> = {
-  'Skin Biopsy': 'e.g., Unremarkable skin',
+  "Skin Biopsy": "e.g., Unremarkable skin",
 };
+
+const CC_GROUPED_TEST_NAMES = [
+  "Lipid Profile",
+  "Liver Function Test",
+  "Renal Function Test",
+  "Electrolytes",
+  "Glucose & Diabetes Monitoring",
+  "Arterial Blood Gas",
+];
+
+const LIPID_PROFILE_TESTS = [
+  { name: "Total Cholesterol", referenceRange: "< 200 mg/dL", unit: "mg/dL" },
+  { name: "Triglycerides", referenceRange: "40 - 150 mg/dL", unit: "mg/dL" },
+  { name: "HDL", referenceRange: "> 60 mg/dL", unit: "mg/dL" },
+  { name: "LDL", referenceRange: "< 100 mg/dL", unit: "mg/dL" },
+];
+
+const LIVER_FUNCTION_TESTS = [
+  { name: "Total Bilirubin", referenceRange: "0.0 - 1.0 mg/dL", unit: "mg/dL" },
+  {
+    name: "Direct Bilirubin",
+    referenceRange: "0.0 - 0.4 mg/dL",
+    unit: "mg/dL",
+  },
+  {
+    name: "Indirect Bilirubin",
+    referenceRange: "0.2 - 0.8 mg/dL",
+    unit: "mg/dL",
+  },
+  { name: "SGOT / AST (Female)", referenceRange: "9 - 25 U/L", unit: "U/L" },
+  { name: "SGOT / AST (Male)", referenceRange: "10 - 40 U/L", unit: "U/L" },
+  { name: "SGPT / ALT (Female)", referenceRange: "7 - 30 U/L", unit: "U/L" },
+  { name: "SGPT / ALT (Male)", referenceRange: "10 - 55 U/L", unit: "U/L" },
+  { name: "Total Protein", referenceRange: "6.4 - 8.3 g/dL", unit: "g/dL" },
+  { name: "Total Protein A/G Ratio (TPAG)", referenceRange: "", unit: "" },
+  { name: "Albumin (Adults)", referenceRange: "3.5 - 5 g/dL", unit: "g/dL" },
+  {
+    name: "Albumin (Children)",
+    referenceRange: "3.4 - 4.2 g/dL",
+    unit: "g/dL",
+  },
+  {
+    name: "Alkaline Phosphatase ALP (Female)",
+    referenceRange: "30 - 100 U/L",
+    unit: "U/L",
+  },
+  {
+    name: "Alkaline Phosphatase ALP (Male)",
+    referenceRange: "45 - 115 U/L",
+    unit: "U/L",
+  },
+];
+
+const RENAL_FUNCTION_TESTS = [
+  {
+    name: "Blood Urea Nitrogen (BUN)",
+    referenceRange: "8 - 23 mg/dL",
+    unit: "mg/dL",
+  },
+  {
+    name: "Blood Uric Acid (BUA)",
+    referenceRange: "4 - 8 mg/dL",
+    unit: "mg/dL",
+  },
+  {
+    name: "Creatinine (Male)",
+    referenceRange: "0.7 - 1.3 mg/dL",
+    unit: "mg/dL",
+  },
+  {
+    name: "Creatinine (Female)",
+    referenceRange: "0.6 - 1.1 mg/dL",
+    unit: "mg/dL",
+  },
+  { name: "eGFR", referenceRange: "", unit: "mL/min/1.73m²" },
+  {
+    name: "Blood Urea Nitrogen/Creatinine Ratio",
+    referenceRange: "",
+    unit: "",
+  },
+];
+
+const ELECTROLYTES_TESTS = [
+  { name: "Sodium (Na+)", referenceRange: "135 - 145 mmol/L", unit: "mmol/L" },
+  {
+    name: "Potassium (K+)",
+    referenceRange: "3.4 - 5.0 mmol/L",
+    unit: "mmol/L",
+  },
+  { name: "Chloride (Cl-)", referenceRange: "9 - 11 mmol/L", unit: "mmol/L" },
+  { name: "Bicarbonate", referenceRange: "22 - 28 mEq/L", unit: "mEq/L" },
+  {
+    name: "Calcium – Total (Ca++)",
+    referenceRange: "8.5 - 10.5 mg/dL",
+    unit: "mg/dL",
+  },
+  { name: "Phosphorus", referenceRange: "3.0 - 4.5 mmol/L", unit: "mmol/L" },
+  {
+    name: "Magnesium (Mg++)",
+    referenceRange: "1.8 - 3 mmol/L",
+    unit: "mmol/L",
+  },
+];
+
+const GLUCOSE_TESTS = [
+  {
+    name: "Random Blood Sugar (RBS)",
+    referenceRange: "< 140 mg/dL",
+    unit: "mg/dL",
+  },
+  {
+    name: "Fasting Blood Sugar (FBS)",
+    referenceRange: "70 - 110 mg/dL",
+    unit: "mg/dL",
+  },
+  {
+    name: "Oral Glucose Tolerance Test (OGTT) 100g",
+    referenceRange: "< 140 mg/dL",
+    unit: "mg/dL",
+  },
+  {
+    name: "Oral Glucose Tolerance Test (OGTT) 75g",
+    referenceRange: "< 140 mg/dL",
+    unit: "mg/dL",
+  },
+  {
+    name: "Oral Glucose Challenge Test (OGCT) 50g",
+    referenceRange: "< 140 mg/dL",
+    unit: "mg/dL",
+  },
+  { name: "Hemoglobin A1c (HBA1c)", referenceRange: "< 5.7%", unit: "%" },
+];
+
+const ABG_TESTS = [
+  { name: "ABG pH", referenceRange: "7.35 - 7.45", unit: "" },
+  { name: "pCO2", referenceRange: "35 - 45 mmHg", unit: "mmHg" },
+  { name: "PO2", referenceRange: "80 - 100 mmHg", unit: "mmHg" },
+  { name: "SaO2", referenceRange: "> 90%", unit: "%" },
+  { name: "HCO3-", referenceRange: "22 - 26 mEq/L", unit: "mEq/L" },
+];
+
+const CC_INDIVIDUAL_TESTS = [
+  { name: "Ammonia", referenceRange: "15 - 45 mcg/dL", unit: "mcg/dL" },
+  { name: "Amylase", referenceRange: "53 - 123 U/L", unit: "U/L" },
+  { name: "Lipase", referenceRange: "31 - 186 U/L", unit: "U/L" },
+  { name: "CK Total (Female)", referenceRange: "40 - 150 U/L", unit: "U/L" },
+  { name: "CK Total (Male)", referenceRange: "60 - 400 U/L", unit: "U/L" },
+  { name: "CK-MB", referenceRange: "< 5% of total CK", unit: "" },
+  {
+    name: "Lactate Dehydrogenase (LDH)",
+    referenceRange: "< 270 U/L",
+    unit: "U/L",
+  },
+  { name: "Lactic Acid", referenceRange: "0.5 - 2.2 mmol/L", unit: "mmol/L" },
+  {
+    name: "Serum Osmolality",
+    referenceRange: "275 - 295 mOsm/kg",
+    unit: "mOsm/kg",
+  },
+  { name: "Prealbumin", referenceRange: "19.5 - 35.8 mg/dL", unit: "mg/dL" },
+  { name: "Troponin I", referenceRange: "0 - 0.4 ng/mL", unit: "ng/mL" },
+  { name: "Troponin T", referenceRange: "0 - 0.01 ng/mL", unit: "ng/mL" },
+  { name: "Beta-HCG (Quantitative)", referenceRange: "", unit: "" },
+  {
+    name: "Testosterone (Male)",
+    referenceRange: "270 - 1070 ng/dL",
+    unit: "ng/dL",
+  },
+  {
+    name: "Testosterone (Female)",
+    referenceRange: "6 - 86 ng/dL",
+    unit: "ng/dL",
+  },
+  { name: "DHEA (Female)", referenceRange: "130 - 980 ng/dL", unit: "ng/dL" },
+  { name: "DHEA (Male)", referenceRange: "180 - 1250 ng/dL", unit: "ng/dL" },
+  {
+    name: "DHEA Sulfate (Female Post Menopause)",
+    referenceRange: "30 - 260 µg/dL",
+    unit: "µg/dL",
+  },
+  {
+    name: "DHEA Sulfate (Male)",
+    referenceRange: "10 - 619 µg/dL",
+    unit: "µg/dL",
+  },
+  { name: "Folate", referenceRange: "3.1 - 17.5 ng/mL", unit: "ng/mL" },
+];
+
+const INITIAL_ELECTROLYTES = {
+  sodium: "",
+  potassium: "",
+  chloride: "",
+  bicarbonate: "",
+  calcium: "",
+  phosphorus: "",
+  magnesium: "",
+};
+
+const INITIAL_ABG = { pH: "", pco2: "", po2: "", sao2: "", hco3: "" };
 
 export default function PatientsPage() {
   const { user } = useAuth();
@@ -105,93 +366,104 @@ export default function PatientsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [lipidSubTest, setLipidSubTest] = useState("");
+  const [lipidValue, setLipidValue] = useState("");
+  const [lftSubTest, setLftSubTest] = useState("");
+  const [lftValue, setLftValue] = useState("");
+  const [rftSubTest, setRftSubTest] = useState("");
+  const [rftValue, setRftValue] = useState("");
+  const [glucoseSubTest, setGlucoseSubTest] = useState("");
+  const [glucoseValue, setGlucoseValue] = useState("");
+  const [electrolytesValues, setElectrolytesValues] =
+    useState(INITIAL_ELECTROLYTES);
+  const [abgValues, setAbgValues] = useState(INITIAL_ABG);
 
   const [formData, setFormData] = useState({
-    patient_id_no: '',
-    last_name: '',
-    first_name: '',
-    middle_name: '',
-    age: '',
-    birthdate: '',
-    sex: 'Male',
-    contact_no: '',
-    address_house_no: '',
-    address_street: '',
-    address_barangay: '',
-    municipality: '',
-    province: '',
-    medical_history: '',
-    medications: '',
-    allergy: '',
+    patient_id_no: "",
+    last_name: "",
+    first_name: "",
+    middle_name: "",
+    age: "",
+    birthdate: "",
+    sex: "Male",
+    contact_no: "",
+    address_house_no: "",
+    address_street: "",
+    address_barangay: "",
+    municipality: "",
+    province: "",
+    medical_history: "",
+    medications: "",
+    allergy: "",
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Test Result Form States
   const [showTestForm, setShowTestForm] = useState(false);
-  const [newPatientName, setNewPatientName] = useState('');
-  const [patientSex, setPatientSex] = useState<'Male' | 'Female'>('Male');
-  const [selectedSection, setSelectedSection] = useState<string>('');
-  const [selectedTest, setSelectedTest] = useState<string>('');
-  const [resultValue, setResultValue] = useState('');
+  const [newPatientName, setNewPatientName] = useState("");
+  const [patientSex, setPatientSex] = useState<"Male" | "Female">("Male");
+  const [selectedSection, setSelectedSection] = useState<string>("");
+  const [selectedTest, setSelectedTest] = useState<string>("");
+  const [resultValue, setResultValue] = useState("");
   const [testSubmitting, setTestSubmitting] = useState(false);
   const [testErrors, setTestErrors] = useState<Record<string, string>>({});
-  
+
   // CBC Components State
   const [cbcValues, setCbcValues] = useState({
-    neutrophils: '',
-    lymphocytes: '',
-    monocytes: '',
-    eosinophils: '',
-    basophils: '',
+    neutrophils: "",
+    lymphocytes: "",
+    monocytes: "",
+    eosinophils: "",
+    basophils: "",
   });
 
   // RBC Indices State
   const [rbcValues, setRbcValues] = useState({
-    mcv: '',
-    mch: '',
-    rdw: '',
+    mcv: "",
+    mch: "",
+    rdw: "",
   });
 
   // Hemoglobin State (single value based on patient sex)
-  const [hemoglobinValue, setHemoglobinValue] = useState('');
+  const [hemoglobinValue, setHemoglobinValue] = useState("");
 
   // Hematocrit State (single value based on patient sex)
-  const [hematocritValue, setHematocritValue] = useState('');
+  const [hematocritValue, setHematocritValue] = useState("");
 
   // Peripheral Blood Smear (free text)
-  const [peripheralSmearValue, setPeripheralSmearValue] = useState('');
+  const [peripheralSmearValue, setPeripheralSmearValue] = useState("");
 
   // Platelet Count
-  const [plateletCountValue, setPlateletCountValue] = useState('');
+  const [plateletCountValue, setPlateletCountValue] = useState("");
 
   // PT/INR, PTT State
   const [coagulationValues, setCoagulationValues] = useState({
-    pt: '',
-    inr: '',
-    aptt: '',
+    pt: "",
+    inr: "",
+    aptt: "",
   });
 
   // Routine Urinalysis (UA) State
   const [urinalysisValues, setUrinalysisValues] = useState({
-    color: '',
-    transparency: '',
-    pH: '',
-    proteinGlucose: '',
-    bilirubinKetone: '',
-    urobilinogen: '',
-    wbcMicroscopic: '',
-    rbcMicroscopic: '',
-    bacteriaCastsCrystals: '',
+    color: "",
+    transparency: "",
+    pH: "",
+    proteinGlucose: "",
+    bilirubinKetone: "",
+    urobilinogen: "",
+    wbcMicroscopic: "",
+    rbcMicroscopic: "",
+    bacteriaCastsCrystals: "",
   });
 
   // Culture and Sensitivity State
   const [cultureSensitivityValues, setCultureSensitivityValues] = useState({
-    culture: '',
-    preliminaryReport: '',
-    finalReport: '',
-    sensitivity: '',
+    culture: "",
+    preliminaryReport: "",
+    finalReport: "",
+    sensitivity: "",
   });
 
   // Success Summary State
@@ -200,7 +472,7 @@ export default function PatientsPage() {
 
   // Inject animation keyframes
   useEffect(() => {
-    const style = document.createElement('style');
+    const style = document.createElement("style");
     style.textContent = `
       @keyframes fadeInSlideUp {
         from {
@@ -265,37 +537,45 @@ export default function PatientsPage() {
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.patient_id_no.trim()) newErrors.patient_id_no = 'Patient ID is required';
-    if (!formData.last_name.trim()) newErrors.last_name = 'Last name is required';
-    if (!formData.first_name.trim()) newErrors.first_name = 'First name is required';
-    if (!formData.age || parseInt(formData.age) < 1) newErrors.age = 'Valid age is required';
-    if (!formData.birthdate) newErrors.birthdate = 'Birthdate is required';
+    if (!formData.patient_id_no.trim())
+      newErrors.patient_id_no = "Patient ID is required";
+    if (!formData.last_name.trim())
+      newErrors.last_name = "Last name is required";
+    if (!formData.first_name.trim())
+      newErrors.first_name = "First name is required";
+    if (!formData.age || parseInt(formData.age) < 1)
+      newErrors.age = "Valid age is required";
+    if (!formData.birthdate) newErrors.birthdate = "Birthdate is required";
     // Philippine mobile number validation
-    let contact = formData.contact_no.replace(/\s|-/g, '').trim();
+    let contact = formData.contact_no.replace(/\s|-/g, "").trim();
     // Acceptable formats: 09XXXXXXXXX, +639XXXXXXXXX, 639XXXXXXXXX
     let valid = false;
-    let normalized = '';
+    let normalized = "";
     if (/^09\d{9}$/.test(contact)) {
       valid = true;
-      normalized = '+63' + contact.slice(1);
+      normalized = "+63" + contact.slice(1);
     } else if (/^\+639\d{9}$/.test(contact)) {
       valid = true;
       normalized = contact;
     } else if (/^639\d{9}$/.test(contact)) {
       valid = true;
-      normalized = '+63' + contact.slice(2);
+      normalized = "+63" + contact.slice(2);
     }
     // Reject landline, letters, special chars, wrong length, wrong prefix
     if (!contact) {
-      newErrors.contact_no = 'Contact number is required';
+      newErrors.contact_no = "Contact number is required";
     } else if (!valid) {
-      newErrors.contact_no = 'Invalid Philippine mobile number.';
+      newErrors.contact_no = "Invalid Philippine mobile number.";
     }
-    if (!formData.municipality.trim()) newErrors.municipality = 'Municipality is required';
-    if (!formData.province.trim()) newErrors.province = 'Province is required';
-    if (!formData.medical_history.trim()) newErrors.medical_history = 'Medical history is required';
-    if (!formData.medications.trim()) newErrors.medications = 'Medications is required';
-    if (!formData.allergy.trim()) newErrors.allergy = 'Allergy information is required';
+    if (!formData.municipality.trim())
+      newErrors.municipality = "Municipality is required";
+    if (!formData.province.trim()) newErrors.province = "Province is required";
+    if (!formData.medical_history.trim())
+      newErrors.medical_history = "Medical history is required";
+    if (!formData.medications.trim())
+      newErrors.medications = "Medications is required";
+    if (!formData.allergy.trim())
+      newErrors.allergy = "Allergy information is required";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -309,28 +589,28 @@ export default function PatientsPage() {
       setTimeout(() => {
         // Find the first error field and scroll to it smoothly
         const errorOrder = [
-          'patient_id_no',
-          'last_name',
-          'first_name',
-          'age',
-          'birthdate',
-          'contact_no',
-          'municipality',
-          'province',
-          'medical_history',
-          'medications',
-          'allergy',
+          "patient_id_no",
+          "last_name",
+          "first_name",
+          "age",
+          "birthdate",
+          "contact_no",
+          "municipality",
+          "province",
+          "medical_history",
+          "medications",
+          "allergy",
         ];
         for (const key of errorOrder) {
           if (errors[key]) {
-            let selector = '';
-            if (key === 'contact_no') selector = 'input[type="tel"]';
-            else if (key === 'birthdate') selector = 'input[type="date"]';
-            else if (key === 'age') selector = 'input[type="number"]';
+            let selector = "";
+            if (key === "contact_no") selector = 'input[type="tel"]';
+            else if (key === "birthdate") selector = 'input[type="date"]';
+            else if (key === "age") selector = 'input[type="number"]';
             else selector = `input[name="${key}"]`;
             const el = document.querySelector(selector);
             if (el) {
-              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              el.scrollIntoView({ behavior: "smooth", block: "center" });
               (el as HTMLInputElement).focus();
               break;
             }
@@ -340,83 +620,86 @@ export default function PatientsPage() {
       return;
     }
     // Normalize and store contact_no
-    let contact = formData.contact_no.replace(/\s|-/g, '').trim();
-    let normalized = '';
+    let contact = formData.contact_no.replace(/\s|-/g, "").trim();
+    let normalized = "";
     if (/^09\d{9}$/.test(contact)) {
-      normalized = '+63' + contact.slice(1);
+      normalized = "+63" + contact.slice(1);
     } else if (/^\+639\d{9}$/.test(contact)) {
       normalized = contact;
     } else if (/^639\d{9}$/.test(contact)) {
-      normalized = '+63' + contact.slice(2);
+      normalized = "+63" + contact.slice(2);
     }
     // ...existing code...
 
     // Check for duplicate Patient ID in memory
     const patientIdExists = patients.some(
-      (patient) => patient.patient_id_no === formData.patient_id_no
+      (patient) => patient.patient_id_no === formData.patient_id_no,
     );
     if (patientIdExists) {
       setErrors((prev) => ({
         ...prev,
-        patient_id_no: 'Patient ID already exists',
+        patient_id_no: "Patient ID already exists",
       }));
       return;
     }
 
     setSubmitting(true);
     try {
-      await addPatient({
-        patient_id_no: formData.patient_id_no,
-        last_name: formData.last_name,
-        first_name: formData.first_name,
-        middle_name: formData.middle_name || null,
-        age: parseInt(formData.age),
-        birthdate: formData.birthdate,
-        sex: formData.sex,
-        contact_no: normalized,
-        address_house_no: formData.address_house_no || null,
-        address_street: formData.address_street || null,
-        address_barangay: formData.address_barangay,
-        municipality: formData.municipality,
-        province: formData.province,
-        medical_history: formData.medical_history,
-        medications: formData.medications,
-        allergy: formData.allergy,
-      }, user);
+      await addPatient(
+        {
+          patient_id_no: formData.patient_id_no,
+          last_name: formData.last_name,
+          first_name: formData.first_name,
+          middle_name: formData.middle_name || null,
+          age: parseInt(formData.age),
+          birthdate: formData.birthdate,
+          sex: formData.sex,
+          contact_no: normalized,
+          address_house_no: formData.address_house_no || null,
+          address_street: formData.address_street || null,
+          address_barangay: formData.address_barangay,
+          municipality: formData.municipality,
+          province: formData.province,
+          medical_history: formData.medical_history,
+          medications: formData.medications,
+          allergy: formData.allergy,
+        },
+        user,
+      );
       await loadPatients();
       setFormData({
-        patient_id_no: '',
-        last_name: '',
-        first_name: '',
-        middle_name: '',
-        age: '',
-        birthdate: '',
-        sex: 'Male',
-        contact_no: '',
-        address_house_no: '',
-        address_street: '',
-        address_barangay: '',
-        municipality: '',
-        province: '',
-        medical_history: '',
-        medications: '',
-        allergy: '',
+        patient_id_no: "",
+        last_name: "",
+        first_name: "",
+        middle_name: "",
+        age: "",
+        birthdate: "",
+        sex: "Male",
+        contact_no: "",
+        address_house_no: "",
+        address_street: "",
+        address_barangay: "",
+        municipality: "",
+        province: "",
+        medical_history: "",
+        medications: "",
+        allergy: "",
       });
       setErrors({});
       setShowForm(false);
-      
+
       // Show test result form for the newly added patient
       setNewPatientName(`${formData.first_name} ${formData.last_name}`);
-      setPatientSex(formData.sex as 'Male' | 'Female');
+      setPatientSex(formData.sex as "Male" | "Female");
       setShowTestForm(true);
     } catch (error: any) {
-      if (error?.message === 'Patient ID already exists') {
+      if (error?.message === "Patient ID already exists") {
         setErrors((prev) => ({
           ...prev,
-          patient_id_no: 'Patient ID already exists',
+          patient_id_no: "Patient ID already exists",
         }));
       } else {
-        console.error('Error adding patient:', error);
+        console.error("Error adding patient:", error);
       }
     } finally {
       setSubmitting(false);
@@ -424,62 +707,121 @@ export default function PatientsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this patient?')) {
+    if (confirm("Are you sure you want to delete this patient?")) {
       await deletePatient(id);
       await loadPatients();
     }
   };
 
   // Filter tests based on patient sex - hide opposite sex variants
-  const HEMATOLOGY_MAIN_TESTS = ['CBC', 'ESR', 'PT/INR, PTT'];
-  const currentTests = selectedSection === 'HEMATOLOGY'
-    ? (TESTS_BY_SECTION['HEMATOLOGY'] || []).filter(test => HEMATOLOGY_MAIN_TESTS.includes(test.name))
-    : (selectedSection ? TESTS_BY_SECTION[selectedSection] || [] : []);
+  const HEMATOLOGY_MAIN_TESTS = ["CBC", "ESR", "PT/INR, PTT"];
+  const currentTests =
+    selectedSection === "HEMATOLOGY"
+      ? (TESTS_BY_SECTION["HEMATOLOGY"] || []).filter((test) =>
+          HEMATOLOGY_MAIN_TESTS.includes(test.name),
+        )
+      : selectedSection === "CLINICAL CHEMISTRY"
+        ? [
+            ...CC_GROUPED_TEST_NAMES.map((name) => ({
+              name,
+              referenceRange: "",
+              unit: "",
+            })),
+            ...CC_INDIVIDUAL_TESTS,
+          ]
+        : selectedSection
+          ? TESTS_BY_SECTION[selectedSection] || []
+          : [];
 
   const validateTestForm = () => {
     const newErrors: Record<string, string> = {};
 
-    if (!selectedSection) newErrors.section = 'Lab section is required';
-    if (!selectedTest) newErrors.test = 'Test is required';
-    
-    if (selectedTest === 'CBC') {
-      if (!cbcValues.neutrophils || !cbcValues.lymphocytes || !cbcValues.monocytes || !cbcValues.eosinophils || !cbcValues.basophils) {
-        newErrors.cbc = 'All CBC components are required';
+    if (!selectedSection) newErrors.section = "Lab section is required";
+    if (!selectedTest) newErrors.test = "Test is required";
+
+    if (selectedTest === "CBC") {
+      if (
+        !cbcValues.neutrophils ||
+        !cbcValues.lymphocytes ||
+        !cbcValues.monocytes ||
+        !cbcValues.eosinophils ||
+        !cbcValues.basophils
+      ) {
+        newErrors.cbc = "All CBC components are required";
       }
       if (!rbcValues.mcv || !rbcValues.mch || !rbcValues.rdw) {
-        newErrors.rbc = 'MCV, MCH, and RDW are required for CBC';
+        newErrors.rbc = "MCV, MCH, and RDW are required for CBC";
       }
       if (!hemoglobinValue) {
-        newErrors.hemoglobin = 'Hemoglobin value is required for CBC';
+        newErrors.hemoglobin = "Hemoglobin value is required for CBC";
       }
       if (!hematocritValue) {
-        newErrors.hematocrit = 'Hematocrit value is required for CBC';
+        newErrors.hematocrit = "Hematocrit value is required for CBC";
       }
       if (!plateletCountValue) {
-        newErrors.platelet = 'Platelet count is required for CBC';
+        newErrors.platelet = "Platelet count is required for CBC";
       }
-    } else if (selectedTest === 'RBC Indices (MCV, MCH, RDW)') {
+    } else if (selectedTest === "RBC Indices (MCV, MCH, RDW)") {
       if (!rbcValues.mcv || !rbcValues.mch || !rbcValues.rdw) {
-        newErrors.rbc = 'All RBC indices are required';
+        newErrors.rbc = "All RBC indices are required";
       }
-    } else if (selectedTest === 'Hemoglobin') {
+    } else if (selectedTest === "Hemoglobin") {
       if (!hemoglobinValue) {
-        newErrors.hemoglobin = 'Hemoglobin value is required';
+        newErrors.hemoglobin = "Hemoglobin value is required";
       }
-    } else if (selectedTest === 'PT/INR, PTT') {
-      if (!coagulationValues.pt || !coagulationValues.inr || !coagulationValues.aptt) {
-        newErrors.coagulation = 'All coagulation values (PT, INR, aPTT) are required';
+    } else if (selectedTest === "PT/INR, PTT") {
+      if (
+        !coagulationValues.pt ||
+        !coagulationValues.inr ||
+        !coagulationValues.aptt
+      ) {
+        newErrors.coagulation =
+          "All coagulation values (PT, INR, aPTT) are required";
       }
-    } else if (selectedTest === 'Routine Urinalysis (UA)') {
-      if (!urinalysisValues.color || !urinalysisValues.transparency || !urinalysisValues.pH || !urinalysisValues.proteinGlucose || !urinalysisValues.bilirubinKetone || !urinalysisValues.urobilinogen || !urinalysisValues.wbcMicroscopic || !urinalysisValues.rbcMicroscopic || !urinalysisValues.bacteriaCastsCrystals) {
-        newErrors.urinalysis = 'All urinalysis components are required';
+    } else if (selectedTest === "Routine Urinalysis (UA)") {
+      if (
+        !urinalysisValues.color ||
+        !urinalysisValues.transparency ||
+        !urinalysisValues.pH ||
+        !urinalysisValues.proteinGlucose ||
+        !urinalysisValues.bilirubinKetone ||
+        !urinalysisValues.urobilinogen ||
+        !urinalysisValues.wbcMicroscopic ||
+        !urinalysisValues.rbcMicroscopic ||
+        !urinalysisValues.bacteriaCastsCrystals
+      ) {
+        newErrors.urinalysis = "All urinalysis components are required";
       }
-    } else if (selectedTest === 'Culture and Sensitivity') {
-      if (!cultureSensitivityValues.culture || !cultureSensitivityValues.preliminaryReport || !cultureSensitivityValues.finalReport || !cultureSensitivityValues.sensitivity) {
-        newErrors.cultureSensitivity = 'Culture, Preliminary Report, Final Report, and Sensitivity are all required';
+    } else if (selectedTest === "Culture and Sensitivity") {
+      if (
+        !cultureSensitivityValues.culture ||
+        !cultureSensitivityValues.preliminaryReport ||
+        !cultureSensitivityValues.finalReport ||
+        !cultureSensitivityValues.sensitivity
+      ) {
+        newErrors.cultureSensitivity =
+          "Culture, Preliminary Report, Final Report, and Sensitivity are all required";
       }
+    } else if (selectedTest === "Lipid Profile") {
+      if (!lipidSubTest) newErrors.lipid = "Please select a sub-test";
+      else if (!lipidValue) newErrors.lipid = "Result value is required";
+    } else if (selectedTest === "Liver Function Test") {
+      if (!lftSubTest) newErrors.lft = "Please select a sub-test";
+      else if (!lftValue) newErrors.lft = "Result value is required";
+    } else if (selectedTest === "Renal Function Test") {
+      if (!rftSubTest) newErrors.rft = "Please select a sub-test";
+      else if (!rftValue) newErrors.rft = "Result value is required";
+    } else if (selectedTest === "Glucose & Diabetes Monitoring") {
+      if (!glucoseSubTest) newErrors.glucose = "Please select a sub-test";
+      else if (!glucoseValue) newErrors.glucose = "Result value is required";
+    } else if (selectedTest === "Electrolytes") {
+      if (Object.values(electrolytesValues).some((v) => !v))
+        newErrors.electrolytes = "All electrolyte values are required";
+    } else if (selectedTest === "Arterial Blood Gas") {
+      if (Object.values(abgValues).some((v) => !v))
+        newErrors.abg = "All ABG values are required";
     } else {
-      if (!resultValue) newErrors.resultValue = 'Result value is required';
+      if (!resultValue) newErrors.resultValue = "Result value is required";
     }
 
     setTestErrors(newErrors);
@@ -498,20 +840,45 @@ export default function PatientsPage() {
 
     setTestSubmitting(true);
     const savedTests: any[] = [];
-    
+
     try {
-      if (selectedTest === 'CBC') {
+      if (selectedTest === "CBC") {
         // Save CBC as ONE test result (not 5 separate rows)
         const cbcComponents = [
-          { name: 'Neutrophils', value: cbcValues.neutrophils, range: '45 - 75', unit: '%' },
-          { name: 'Lymphocytes', value: cbcValues.lymphocytes, range: '16 - 46', unit: '%' },
-          { name: 'Monocytes', value: cbcValues.monocytes, range: '4 - 11', unit: '%' },
-          { name: 'Eosinophils', value: cbcValues.eosinophils, range: '0 - 8', unit: '%' },
-          { name: 'Basophils', value: cbcValues.basophils, range: '0 - 3', unit: '%' },
+          {
+            name: "Neutrophils",
+            value: cbcValues.neutrophils,
+            range: "45 - 75",
+            unit: "%",
+          },
+          {
+            name: "Lymphocytes",
+            value: cbcValues.lymphocytes,
+            range: "16 - 46",
+            unit: "%",
+          },
+          {
+            name: "Monocytes",
+            value: cbcValues.monocytes,
+            range: "4 - 11",
+            unit: "%",
+          },
+          {
+            name: "Eosinophils",
+            value: cbcValues.eosinophils,
+            range: "0 - 8",
+            unit: "%",
+          },
+          {
+            name: "Basophils",
+            value: cbcValues.basophils,
+            range: "0 - 3",
+            unit: "%",
+          },
         ];
 
-        const testDetailsCbc = currentTests.find((t) => t.name === 'CBC');
-        const sexLabel = patientSex === 'Male' ? 'Male' : 'Female';
+        const testDetailsCbc = currentTests.find((t) => t.name === "CBC");
+        const sexLabel = patientSex === "Male" ? "Male" : "Female";
         const cbcLines = [
           ...cbcComponents.map((c) => `${c.name}: ${c.value}${c.unit}`),
           `MCV: ${rbcValues.mcv} fL`,
@@ -520,86 +887,128 @@ export default function PatientsPage() {
           `Hemoglobin (${sexLabel}): ${hemoglobinValue} g/dL`,
           `Hematocrit (${sexLabel}): ${hematocritValue} %`,
           `Platelet Count: ${plateletCountValue} x10^9/L`,
-          ...(peripheralSmearValue ? [`Peripheral Blood Smear: ${peripheralSmearValue}`] : []),
+          ...(peripheralSmearValue
+            ? [`Peripheral Blood Smear: ${peripheralSmearValue}`]
+            : []),
         ];
-        const cbcResultValue = cbcLines.join('\n');
+        const cbcResultValue = cbcLines.join("\n");
 
         await addTestResult(
           {
             patient_name: newPatientName,
             section: selectedSection,
-            test_name: 'CBC',
+            test_name: "CBC",
             result_value: cbcResultValue,
-            reference_range: testDetailsCbc?.referenceRange || testDetails.referenceRange,
-            unit: '',
+            reference_range:
+              testDetailsCbc?.referenceRange || testDetails.referenceRange,
+            unit: "",
           },
           user,
         );
 
         // Success summary can still list components
         for (const component of cbcComponents) savedTests.push(component);
-        savedTests.push({ name: 'MCV', value: rbcValues.mcv, range: '80 - 100', unit: 'fL' });
-        savedTests.push({ name: 'MCH', value: rbcValues.mch, range: '27 - 31', unit: 'pg' });
-        savedTests.push({ name: 'RDW', value: rbcValues.rdw, range: '11.5 - 14.5', unit: '%' });
+        savedTests.push({
+          name: "MCV",
+          value: rbcValues.mcv,
+          range: "80 - 100",
+          unit: "fL",
+        });
+        savedTests.push({
+          name: "MCH",
+          value: rbcValues.mch,
+          range: "27 - 31",
+          unit: "pg",
+        });
+        savedTests.push({
+          name: "RDW",
+          value: rbcValues.rdw,
+          range: "11.5 - 14.5",
+          unit: "%",
+        });
         savedTests.push({
           name: `Hemoglobin (${sexLabel})`,
           value: hemoglobinValue,
-          range: sexLabel === 'Male' ? '14.0 - 17.0' : '12.0 - 15.0',
-          unit: 'g/dL',
+          range: sexLabel === "Male" ? "14.0 - 17.0" : "12.0 - 15.0",
+          unit: "g/dL",
         });
         savedTests.push({
           name: `Hematocrit (${sexLabel})`,
           value: hematocritValue,
-          range: sexLabel === 'Male' ? '40 - 54' : '37 - 47',
-          unit: '%',
+          range: sexLabel === "Male" ? "40 - 54" : "37 - 47",
+          unit: "%",
         });
-        savedTests.push({ name: 'Platelet Count', value: plateletCountValue, range: '150 - 450', unit: 'x10^9/L' });
+        savedTests.push({
+          name: "Platelet Count",
+          value: plateletCountValue,
+          range: "150 - 450",
+          unit: "x10^9/L",
+        });
         if (peripheralSmearValue) {
-          savedTests.push({ name: 'Peripheral Blood Smear', value: peripheralSmearValue, range: '', unit: '' });
+          savedTests.push({
+            name: "Peripheral Blood Smear",
+            value: peripheralSmearValue,
+            range: "",
+            unit: "",
+          });
         }
-      } else if (selectedTest === 'RBC Indices (MCV, MCH, RDW)') {
+      } else if (selectedTest === "RBC Indices (MCV, MCH, RDW)") {
         // Submit each RBC Indices component separately
         const rbcComponents = [
-          { name: 'MCV', value: rbcValues.mcv, range: '80 - 100', unit: 'fL' },
-          { name: 'MCH', value: rbcValues.mch, range: '27 - 31', unit: 'pg' },
-          { name: 'RDW', value: rbcValues.rdw, range: '11.5 - 14.5', unit: '%' },
+          { name: "MCV", value: rbcValues.mcv, range: "80 - 100", unit: "fL" },
+          { name: "MCH", value: rbcValues.mch, range: "27 - 31", unit: "pg" },
+          {
+            name: "RDW",
+            value: rbcValues.rdw,
+            range: "11.5 - 14.5",
+            unit: "%",
+          },
         ];
 
         for (const component of rbcComponents) {
-          await addTestResult({
-            patient_name: newPatientName,
-            section: selectedSection,
-            test_name: component.name,
-            result_value: component.value,
-            reference_range: component.range,
-            unit: component.unit,
-          }, user);
-          
+          await addTestResult(
+            {
+              patient_name: newPatientName,
+              section: selectedSection,
+              test_name: component.name,
+              result_value: component.value,
+              reference_range: component.range,
+              unit: component.unit,
+            },
+            user,
+          );
+
           savedTests.push(component);
         }
-      } else if (selectedTest === 'Hemoglobin') {
+      } else if (selectedTest === "Hemoglobin") {
         // Submit Hemoglobin based on patient sex
-        const testName = patientSex === 'Male' ? 'Hemoglobin (Male)' : 'Hemoglobin (Female)';
-        const referenceRange = patientSex === 'Male' ? '14.0 - 17.0' : '12.0 - 15.0';
-        
-        await addTestResult({
-          patient_name: newPatientName,
-          section: selectedSection,
-          test_name: testName,
-          result_value: hemoglobinValue,
-          reference_range: referenceRange,
-          unit: 'g/dL',
-        }, user);
-        
+        const testName =
+          patientSex === "Male" ? "Hemoglobin (Male)" : "Hemoglobin (Female)";
+        const referenceRange =
+          patientSex === "Male" ? "14.0 - 17.0" : "12.0 - 15.0";
+
+        await addTestResult(
+          {
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: testName,
+            result_value: hemoglobinValue,
+            reference_range: referenceRange,
+            unit: "g/dL",
+          },
+          user,
+        );
+
         savedTests.push({
           name: testName,
           value: hemoglobinValue,
           range: referenceRange,
-          unit: 'g/dL',
+          unit: "g/dL",
         });
-      } else if (selectedTest === 'PT/INR, PTT') {
+      } else if (selectedTest === "PT/INR, PTT") {
         // Save coagulation as ONE test result row (not 3 separate rows)
-        const testDetailsCoag = currentTests.find((t) => t.name === 'PT/INR, PTT') || testDetails;
+        const testDetailsCoag =
+          currentTests.find((t) => t.name === "PT/INR, PTT") || testDetails;
         const coagLines = [
           `PT: ${coagulationValues.pt} seconds`,
           `INR: ${coagulationValues.inr}`,
@@ -610,74 +1019,339 @@ export default function PatientsPage() {
           {
             patient_name: newPatientName,
             section: selectedSection,
-            test_name: 'PT/INR, PTT',
-            result_value: coagLines.join('\n'),
+            test_name: "PT/INR, PTT",
+            result_value: coagLines.join("\n"),
             reference_range: testDetailsCoag.referenceRange,
-            unit: '',
+            unit: "",
           },
           user,
         );
 
-        savedTests.push({ name: 'PT', value: coagulationValues.pt, range: '11.0 - 13.5', unit: 'seconds' });
-        savedTests.push({ name: 'INR', value: coagulationValues.inr, range: '0.8 - 1.2', unit: '' });
-        savedTests.push({ name: 'aPTT', value: coagulationValues.aptt, range: '25.0 - 35.0', unit: 'seconds' });
-      } else if (selectedTest === 'Routine Urinalysis (UA)') {
+        savedTests.push({
+          name: "PT",
+          value: coagulationValues.pt,
+          range: "11.0 - 13.5",
+          unit: "seconds",
+        });
+        savedTests.push({
+          name: "INR",
+          value: coagulationValues.inr,
+          range: "0.8 - 1.2",
+          unit: "",
+        });
+        savedTests.push({
+          name: "aPTT",
+          value: coagulationValues.aptt,
+          range: "25.0 - 35.0",
+          unit: "seconds",
+        });
+      } else if (selectedTest === "Routine Urinalysis (UA)") {
         // Submit each urinalysis component separately
         const urinalysisComponents = [
-          { name: 'UA Color', value: urinalysisValues.color, range: 'Clear, Pale Yellow, Amber', unit: '' },
-          { name: 'UA Transparency', value: urinalysisValues.transparency, range: 'Clear', unit: '' },
-          { name: 'UA pH', value: urinalysisValues.pH, range: '4.5 - 8.0', unit: '' },
-          { name: 'UA Protein/Glucose', value: urinalysisValues.proteinGlucose, range: 'Positive, Negative', unit: '' },
-          { name: 'UA Bilirubin/Ketone', value: urinalysisValues.bilirubinKetone, range: 'Positive, Negative', unit: '' },
-          { name: 'UA Urobilinogen', value: urinalysisValues.urobilinogen, range: '0.2 - 1.0', unit: 'IEU/dL' },
-          { name: 'UA WBC (Microscopic)', value: urinalysisValues.wbcMicroscopic, range: '0 - 5', unit: 'hpf' },
-          { name: 'UA RBC (Microscopic)', value: urinalysisValues.rbcMicroscopic, range: '0 - 2', unit: 'hpf' },
-          { name: 'UA Bacteria/Casts/Crystals', value: urinalysisValues.bacteriaCastsCrystals, range: 'None, Rare, Few, Many', unit: '' },
+          {
+            name: "UA Color",
+            value: urinalysisValues.color,
+            range: "Clear, Pale Yellow, Amber",
+            unit: "",
+          },
+          {
+            name: "UA Transparency",
+            value: urinalysisValues.transparency,
+            range: "Clear",
+            unit: "",
+          },
+          {
+            name: "UA pH",
+            value: urinalysisValues.pH,
+            range: "4.5 - 8.0",
+            unit: "",
+          },
+          {
+            name: "UA Protein/Glucose",
+            value: urinalysisValues.proteinGlucose,
+            range: "Positive, Negative",
+            unit: "",
+          },
+          {
+            name: "UA Bilirubin/Ketone",
+            value: urinalysisValues.bilirubinKetone,
+            range: "Positive, Negative",
+            unit: "",
+          },
+          {
+            name: "UA Urobilinogen",
+            value: urinalysisValues.urobilinogen,
+            range: "0.2 - 1.0",
+            unit: "IEU/dL",
+          },
+          {
+            name: "UA WBC (Microscopic)",
+            value: urinalysisValues.wbcMicroscopic,
+            range: "0 - 5",
+            unit: "hpf",
+          },
+          {
+            name: "UA RBC (Microscopic)",
+            value: urinalysisValues.rbcMicroscopic,
+            range: "0 - 2",
+            unit: "hpf",
+          },
+          {
+            name: "UA Bacteria/Casts/Crystals",
+            value: urinalysisValues.bacteriaCastsCrystals,
+            range: "None, Rare, Few, Many",
+            unit: "",
+          },
         ];
 
         for (const component of urinalysisComponents) {
-          await addTestResult({
-            patient_name: newPatientName,
-            section: selectedSection,
-            test_name: component.name,
-            result_value: component.value,
-            reference_range: component.range,
-            unit: component.unit,
-          }, user);
-          
+          await addTestResult(
+            {
+              patient_name: newPatientName,
+              section: selectedSection,
+              test_name: component.name,
+              result_value: component.value,
+              reference_range: component.range,
+              unit: component.unit,
+            },
+            user,
+          );
+
           savedTests.push(component);
         }
-      } else if (selectedTest === 'Culture and Sensitivity') {
+      } else if (selectedTest === "Culture and Sensitivity") {
         // Submit each culture and sensitivity component separately
         const cultureAndSensitivityComponents = [
-          { name: 'Culture', value: cultureSensitivityValues.culture, range: 'Organism identification', unit: '' },
-          { name: 'Preliminary Report', value: cultureSensitivityValues.preliminaryReport, range: 'Growth status after 24/48 hours', unit: '' },
-          { name: 'Final Report', value: cultureSensitivityValues.finalReport, range: 'Final growth status after 5-7 days', unit: '' },
-          { name: 'Sensitivity (Antibiogram)', value: cultureSensitivityValues.sensitivity, range: 'S (Susceptible), I (Intermediate), R (Resistant)', unit: '' },
+          {
+            name: "Culture",
+            value: cultureSensitivityValues.culture,
+            range: "Organism identification",
+            unit: "",
+          },
+          {
+            name: "Preliminary Report",
+            value: cultureSensitivityValues.preliminaryReport,
+            range: "Growth status after 24/48 hours",
+            unit: "",
+          },
+          {
+            name: "Final Report",
+            value: cultureSensitivityValues.finalReport,
+            range: "Final growth status after 5-7 days",
+            unit: "",
+          },
+          {
+            name: "Sensitivity (Antibiogram)",
+            value: cultureSensitivityValues.sensitivity,
+            range: "S (Susceptible), I (Intermediate), R (Resistant)",
+            unit: "",
+          },
         ];
 
         for (const component of cultureAndSensitivityComponents) {
-          await addTestResult({
+          await addTestResult(
+            {
+              patient_name: newPatientName,
+              section: selectedSection,
+              test_name: component.name,
+              result_value: component.value,
+              reference_range: component.range,
+              unit: component.unit,
+            },
+            user,
+          );
+
+          savedTests.push(component);
+        }
+      } else if (selectedTest === "Lipid Profile") {
+        const sub = LIPID_PROFILE_TESTS.find((t) => t.name === lipidSubTest)!;
+        await addTestResult(
+          {
             patient_name: newPatientName,
             section: selectedSection,
-            test_name: component.name,
-            result_value: component.value,
-            reference_range: component.range,
-            unit: component.unit,
-          }, user);
-          
+            test_name: lipidSubTest,
+            result_value: lipidValue,
+            reference_range: sub.referenceRange,
+            unit: sub.unit,
+          },
+          user,
+        );
+        savedTests.push({
+          name: lipidSubTest,
+          value: lipidValue,
+          range: sub.referenceRange,
+          unit: sub.unit,
+        });
+      } else if (selectedTest === "Liver Function Test") {
+        const sub = LIVER_FUNCTION_TESTS.find((t) => t.name === lftSubTest)!;
+        await addTestResult(
+          {
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: lftSubTest,
+            result_value: lftValue,
+            reference_range: sub.referenceRange,
+            unit: sub.unit,
+          },
+          user,
+        );
+        savedTests.push({
+          name: lftSubTest,
+          value: lftValue,
+          range: sub.referenceRange,
+          unit: sub.unit,
+        });
+      } else if (selectedTest === "Renal Function Test") {
+        const sub = RENAL_FUNCTION_TESTS.find((t) => t.name === rftSubTest)!;
+        await addTestResult(
+          {
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: rftSubTest,
+            result_value: rftValue,
+            reference_range: sub.referenceRange,
+            unit: sub.unit,
+          },
+          user,
+        );
+        savedTests.push({
+          name: rftSubTest,
+          value: rftValue,
+          range: sub.referenceRange,
+          unit: sub.unit,
+        });
+      } else if (selectedTest === "Glucose & Diabetes Monitoring") {
+        const sub = GLUCOSE_TESTS.find((t) => t.name === glucoseSubTest)!;
+        await addTestResult(
+          {
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: glucoseSubTest,
+            result_value: glucoseValue,
+            reference_range: sub.referenceRange,
+            unit: sub.unit,
+          },
+          user,
+        );
+        savedTests.push({
+          name: glucoseSubTest,
+          value: glucoseValue,
+          range: sub.referenceRange,
+          unit: sub.unit,
+        });
+      } else if (selectedTest === "Electrolytes") {
+        const components = [
+          {
+            name: "Sodium (Na+)",
+            value: electrolytesValues.sodium,
+            range: "135 - 145 mmol/L",
+            unit: "mmol/L",
+          },
+          {
+            name: "Potassium (K+)",
+            value: electrolytesValues.potassium,
+            range: "3.4 - 5.0 mmol/L",
+            unit: "mmol/L",
+          },
+          {
+            name: "Chloride (Cl-)",
+            value: electrolytesValues.chloride,
+            range: "9 - 11 mmol/L",
+            unit: "mmol/L",
+          },
+          {
+            name: "Bicarbonate",
+            value: electrolytesValues.bicarbonate,
+            range: "22 - 28 mEq/L",
+            unit: "mEq/L",
+          },
+          {
+            name: "Calcium – Total (Ca++)",
+            value: electrolytesValues.calcium,
+            range: "8.5 - 10.5 mg/dL",
+            unit: "mg/dL",
+          },
+          {
+            name: "Phosphorus",
+            value: electrolytesValues.phosphorus,
+            range: "3.0 - 4.5 mmol/L",
+            unit: "mmol/L",
+          },
+          {
+            name: "Magnesium (Mg++)",
+            value: electrolytesValues.magnesium,
+            range: "1.8 - 3 mmol/L",
+            unit: "mmol/L",
+          },
+        ];
+        for (const component of components) {
+          await addTestResult(
+            {
+              patient_name: newPatientName,
+              section: selectedSection,
+              test_name: component.name,
+              result_value: component.value,
+              reference_range: component.range,
+              unit: component.unit,
+            },
+            user,
+          );
+          savedTests.push(component);
+        }
+      } else if (selectedTest === "Arterial Blood Gas") {
+        const components = [
+          {
+            name: "ABG pH",
+            value: abgValues.pH,
+            range: "7.35 - 7.45",
+            unit: "",
+          },
+          {
+            name: "pCO2",
+            value: abgValues.pco2,
+            range: "35 - 45 mmHg",
+            unit: "mmHg",
+          },
+          {
+            name: "PO2",
+            value: abgValues.po2,
+            range: "80 - 100 mmHg",
+            unit: "mmHg",
+          },
+          { name: "SaO2", value: abgValues.sao2, range: "> 90%", unit: "%" },
+          {
+            name: "HCO3-",
+            value: abgValues.hco3,
+            range: "22 - 26 mEq/L",
+            unit: "mEq/L",
+          },
+        ];
+        for (const component of components) {
+          await addTestResult(
+            {
+              patient_name: newPatientName,
+              section: selectedSection,
+              test_name: component.name,
+              result_value: component.value,
+              reference_range: component.range,
+              unit: component.unit,
+            },
+            user,
+          );
           savedTests.push(component);
         }
       } else {
-        await addTestResult({
-          patient_name: newPatientName,
-          section: selectedSection,
-          test_name: selectedTest,
-          result_value: resultValue,
-          reference_range: testDetails.referenceRange,
-          unit: testDetails.unit,
-        }, user);
-        
+        await addTestResult(
+          {
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: selectedTest,
+            result_value: resultValue,
+            reference_range: testDetails.referenceRange,
+            unit: testDetails.unit,
+          },
+          user,
+        );
         savedTests.push({
           name: selectedTest,
           value: resultValue,
@@ -689,34 +1363,65 @@ export default function PatientsPage() {
       // Show success summary
       setSavedTestsData(savedTests);
       setShowSuccessSummary(true);
-      
+
       // Auto redirect after 3 seconds
       setTimeout(() => {
-        router.push('/dashboard/results');
+        router.push("/dashboard/results");
       }, 3000);
     } catch (error) {
-      console.error('Error saving test result:', error);
+      console.error("Error saving test result:", error);
       setTestSubmitting(false);
     }
   };
 
   const closeTestForm = () => {
     setShowTestForm(false);
-    setSelectedSection('');
-    setSelectedTest('');
-    setResultValue('');
-    setCbcValues({ neutrophils: '', lymphocytes: '', monocytes: '', eosinophils: '', basophils: '' });
-    setRbcValues({ mcv: '', mch: '', rdw: '' });
-    setHemoglobinValue('');
-    setHematocritValue('');
-    setPeripheralSmearValue('');
-    setPlateletCountValue('');
-    setCoagulationValues({ pt: '', inr: '', aptt: '' });
-    setUrinalysisValues({ color: '', transparency: '', pH: '', proteinGlucose: '', bilirubinKetone: '', urobilinogen: '', wbcMicroscopic: '', rbcMicroscopic: '', bacteriaCastsCrystals: '' });
-    setCultureSensitivityValues({ culture: '', preliminaryReport: '', finalReport: '', sensitivity: '' });
+    setSelectedSection("");
+    setSelectedTest("");
+    setResultValue("");
+    setCbcValues({
+      neutrophils: "",
+      lymphocytes: "",
+      monocytes: "",
+      eosinophils: "",
+      basophils: "",
+    });
+    setRbcValues({ mcv: "", mch: "", rdw: "" });
+    setHemoglobinValue("");
+    setHematocritValue("");
+    setPeripheralSmearValue("");
+    setPlateletCountValue("");
+    setCoagulationValues({ pt: "", inr: "", aptt: "" });
+    setUrinalysisValues({
+      color: "",
+      transparency: "",
+      pH: "",
+      proteinGlucose: "",
+      bilirubinKetone: "",
+      urobilinogen: "",
+      wbcMicroscopic: "",
+      rbcMicroscopic: "",
+      bacteriaCastsCrystals: "",
+    });
+    setCultureSensitivityValues({
+      culture: "",
+      preliminaryReport: "",
+      finalReport: "",
+      sensitivity: "",
+    });
+    setLipidSubTest("");
+    setLipidValue("");
+    setLftSubTest("");
+    setLftValue("");
+    setRftSubTest("");
+    setRftValue("");
+    setGlucoseSubTest("");
+    setGlucoseValue("");
+    setElectrolytesValues(INITIAL_ELECTROLYTES);
+    setAbgValues(INITIAL_ABG);
     setTestErrors({});
-    setNewPatientName('');
-    setPatientSex('Male');
+    setNewPatientName("");
+    setPatientSex("Male");
   };
 
   if (loading) {
@@ -728,27 +1433,35 @@ export default function PatientsPage() {
   }
 
   return (
-    <div className="space-y-8" style={{
-      animation: 'fadeIn 0.5s ease-out'
-    }}>
+    <div
+      className="space-y-8"
+      style={{
+        animation: "fadeIn 0.5s ease-out",
+      }}
+    >
       {/* Header */}
-      <div className="flex items-center justify-between" style={{
-        animation: 'fadeInSlideUp 0.6s ease-out',
-        animationDelay: '0.1s',
-        animationFillMode: 'both'
-      }}>
+      <div
+        className="flex items-center justify-between"
+        style={{
+          animation: "fadeInSlideUp 0.6s ease-out",
+          animationDelay: "0.1s",
+          animationFillMode: "both",
+        }}
+      >
         <div>
-          <h1 className="text-3xl font-bold text-gray-800">Patient Management</h1>
-          <p className="text-gray-600 text-sm mt-1">Register and manage patient demographics and information</p>
+          <h1 className="text-3xl font-bold text-gray-800">
+            Patient Management
+          </h1>
+          <p className="text-gray-600 text-sm mt-1">
+            Register and manage patient demographics and information
+          </p>
         </div>
         <button
           onClick={() => setShowForm(!showForm)}
           className="px-6 py-3 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold flex items-center gap-2"
         >
           {showForm ? (
-            <>
-              ✕ Cancel
-            </>
+            <>✕ Cancel</>
           ) : (
             <>
               <Plus className="w-5 h-5" />
@@ -760,11 +1473,19 @@ export default function PatientsPage() {
 
       {/* Add Patient Form */}
       {showForm && (
-        <div className="bg-white rounded-lg shadow-lg p-8 border-l-4 border-[#3B6255]" style={{
-          animation: 'fadeInSlideUp 0.6s ease-out 0.2s backwards'
-        }}>
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Patient Demographics Form</h2>
-          <p className="text-gray-600 text-sm mb-6">Fields marked with <span className="text-red-500 font-bold">*</span> are required</p>
+        <div
+          className="bg-white rounded-lg shadow-lg p-8 border-l-4 border-[#3B6255]"
+          style={{
+            animation: "fadeInSlideUp 0.6s ease-out 0.2s backwards",
+          }}
+        >
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">
+            Patient Demographics Form
+          </h2>
+          <p className="text-gray-600 text-sm mb-6">
+            Fields marked with <span className="text-red-500 font-bold">*</span>{" "}
+            are required
+          </p>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Patient ID Section */}
@@ -776,13 +1497,21 @@ export default function PatientsPage() {
                 <input
                   type="text"
                   value={formData.patient_id_no}
-                  onChange={(e) => setFormData({ ...formData, patient_id_no: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, patient_id_no: e.target.value })
+                  }
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                    errors.patient_id_no ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    errors.patient_id_no
+                      ? "border-red-500 bg-red-50"
+                      : "border-gray-300"
                   }`}
                   placeholder="e.g., PAT001"
                 />
-                {errors.patient_id_no && <p className="text-red-500 text-sm mt-1">{errors.patient_id_no}</p>}
+                {errors.patient_id_no && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {errors.patient_id_no}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -795,13 +1524,21 @@ export default function PatientsPage() {
                 <input
                   type="text"
                   value={formData.last_name}
-                  onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, last_name: e.target.value })
+                  }
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                    errors.last_name ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    errors.last_name
+                      ? "border-red-500 bg-red-50"
+                      : "border-gray-300"
                   }`}
                   placeholder="Surname"
                 />
-                {errors.last_name && <p className="text-red-500 text-sm mt-1">{errors.last_name}</p>}
+                {errors.last_name && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {errors.last_name}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -811,13 +1548,21 @@ export default function PatientsPage() {
                 <input
                   type="text"
                   value={formData.first_name}
-                  onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, first_name: e.target.value })
+                  }
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                    errors.first_name ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    errors.first_name
+                      ? "border-red-500 bg-red-50"
+                      : "border-gray-300"
                   }`}
                   placeholder="Given name"
                 />
-                {errors.first_name && <p className="text-red-500 text-sm mt-1">{errors.first_name}</p>}
+                {errors.first_name && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {errors.first_name}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -827,7 +1572,9 @@ export default function PatientsPage() {
                 <input
                   type="text"
                   value={formData.middle_name}
-                  onChange={(e) => setFormData({ ...formData, middle_name: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, middle_name: e.target.value })
+                  }
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                   placeholder="Optional"
                 />
@@ -843,14 +1590,18 @@ export default function PatientsPage() {
                 <input
                   type="number"
                   value={formData.age}
-                  onChange={(e) => setFormData({ ...formData, age: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, age: e.target.value })
+                  }
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                    errors.age ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    errors.age ? "border-red-500 bg-red-50" : "border-gray-300"
                   }`}
                   placeholder="Enter age"
                   min="1"
                 />
-                {errors.age && <p className="text-red-500 text-sm mt-1">{errors.age}</p>}
+                {errors.age && (
+                  <p className="text-red-500 text-sm mt-1">{errors.age}</p>
+                )}
               </div>
 
               <div>
@@ -860,12 +1611,20 @@ export default function PatientsPage() {
                 <input
                   type="date"
                   value={formData.birthdate}
-                  onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, birthdate: e.target.value })
+                  }
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
-                    errors.birthdate ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    errors.birthdate
+                      ? "border-red-500 bg-red-50"
+                      : "border-gray-300"
                   }`}
                 />
-                {errors.birthdate && <p className="text-red-500 text-sm mt-1">{errors.birthdate}</p>}
+                {errors.birthdate && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {errors.birthdate}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -877,7 +1636,9 @@ export default function PatientsPage() {
                 </label>
                 <select
                   value={formData.sex}
-                  onChange={(e) => setFormData({ ...formData, sex: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, sex: e.target.value })
+                  }
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
                 >
                   <option>Male</option>
@@ -892,7 +1653,9 @@ export default function PatientsPage() {
                 {/* Improved PhoneInputMask component */}
                 <PhoneInputMask
                   value={formData.contact_no}
-                  onChange={(val) => setFormData({ ...formData, contact_no: val })}
+                  onChange={(val) =>
+                    setFormData({ ...formData, contact_no: val })
+                  }
                   error={errors.contact_no}
                   className="mb-0"
                 />
@@ -910,7 +1673,12 @@ export default function PatientsPage() {
                   <input
                     type="text"
                     value={formData.address_house_no}
-                    onChange={(e) => setFormData({ ...formData, address_house_no: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        address_house_no: e.target.value,
+                      })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                     placeholder="Optional"
                   />
@@ -923,7 +1691,12 @@ export default function PatientsPage() {
                   <input
                     type="text"
                     value={formData.address_street}
-                    onChange={(e) => setFormData({ ...formData, address_street: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        address_street: e.target.value,
+                      })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                     placeholder="Optional"
                   />
@@ -936,7 +1709,12 @@ export default function PatientsPage() {
                   <input
                     type="text"
                     value={formData.address_barangay}
-                    onChange={(e) => setFormData({ ...formData, address_barangay: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        address_barangay: e.target.value,
+                      })
+                    }
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                     placeholder="Optional"
                   />
@@ -949,13 +1727,21 @@ export default function PatientsPage() {
                   <input
                     type="text"
                     value={formData.municipality}
-                    onChange={(e) => setFormData({ ...formData, municipality: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, municipality: e.target.value })
+                    }
                     className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                      errors.municipality ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      errors.municipality
+                        ? "border-red-500 bg-red-50"
+                        : "border-gray-300"
                     }`}
                     placeholder="e.g., Makati"
                   />
-                  {errors.municipality && <p className="text-red-500 text-sm mt-1">{errors.municipality}</p>}
+                  {errors.municipality && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {errors.municipality}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -965,21 +1751,31 @@ export default function PatientsPage() {
                   <input
                     type="text"
                     value={formData.province}
-                    onChange={(e) => setFormData({ ...formData, province: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, province: e.target.value })
+                    }
                     className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                      errors.province ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                      errors.province
+                        ? "border-red-500 bg-red-50"
+                        : "border-gray-300"
                     }`}
                     placeholder="e.g., NCR"
                   />
-                  {errors.province && <p className="text-red-500 text-sm mt-1">{errors.province}</p>}
+                  {errors.province && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {errors.province}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
 
             {/* Medical Section */}
             <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
-              <h3 className="font-semibold text-gray-800 mb-4">Medical Information</h3>
-              
+              <h3 className="font-semibold text-gray-800 mb-4">
+                Medical Information
+              </h3>
+
               <div className="mb-4">
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Medical History <span className="text-red-500">*</span>
@@ -987,14 +1783,25 @@ export default function PatientsPage() {
                 <textarea
                   name="medical_history"
                   value={formData.medical_history}
-                  onChange={(e) => setFormData({ ...formData, medical_history: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      medical_history: e.target.value,
+                    })
+                  }
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                    errors.medical_history ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    errors.medical_history
+                      ? "border-red-500 bg-red-50"
+                      : "border-gray-300"
                   }`}
                   placeholder="e.g., Hypertension, Diabetes"
                   rows={3}
                 />
-                {errors.medical_history && <p className="text-red-500 text-sm mt-1">{errors.medical_history}</p>}
+                {errors.medical_history && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {errors.medical_history}
+                  </p>
+                )}
               </div>
 
               <div className="mb-4">
@@ -1004,14 +1811,22 @@ export default function PatientsPage() {
                 <textarea
                   name="medications"
                   value={formData.medications}
-                  onChange={(e) => setFormData({ ...formData, medications: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, medications: e.target.value })
+                  }
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                    errors.medications ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    errors.medications
+                      ? "border-red-500 bg-red-50"
+                      : "border-gray-300"
                   }`}
                   placeholder="e.g., Metoprolol 50mg daily, Atorvastatin 20mg"
                   rows={3}
                 />
-                {errors.medications && <p className="text-red-500 text-sm mt-1">{errors.medications}</p>}
+                {errors.medications && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {errors.medications}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -1021,14 +1836,20 @@ export default function PatientsPage() {
                 <textarea
                   name="allergy"
                   value={formData.allergy}
-                  onChange={(e) => setFormData({ ...formData, allergy: e.target.value })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, allergy: e.target.value })
+                  }
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                    errors.allergy ? 'border-red-500 bg-red-50' : 'border-gray-300'
+                    errors.allergy
+                      ? "border-red-500 bg-red-50"
+                      : "border-gray-300"
                   }`}
                   placeholder="e.g., Penicillin, None"
                   rows={2}
                 />
-                {errors.allergy && <p className="text-red-500 text-sm mt-1">{errors.allergy}</p>}
+                {errors.allergy && (
+                  <p className="text-red-500 text-sm mt-1">{errors.allergy}</p>
+                )}
               </div>
             </div>
 
@@ -1039,7 +1860,7 @@ export default function PatientsPage() {
                 disabled={submitting}
                 className="flex-1 px-6 py-3 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
               >
-                {submitting ? 'Registering...' : '✓ Register Patient'}
+                {submitting ? "Registering..." : "✓ Register Patient"}
               </button>
               <button
                 type="button"
@@ -1054,9 +1875,12 @@ export default function PatientsPage() {
       )}
 
       {/* Patients List */}
-      <div className="bg-white rounded-lg shadow-lg overflow-hidden" style={{
-        animation: 'fadeInSlideUp 0.6s ease-out 0.3s backwards'
-      }}>
+      <div
+        className="bg-white rounded-lg shadow-lg overflow-hidden"
+        style={{
+          animation: "fadeInSlideUp 0.6s ease-out 0.3s backwards",
+        }}
+      >
         <div className="px-8 py-6 border-b border-gray-200">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <h2 className="text-2xl font-bold text-gray-800">
@@ -1070,12 +1894,22 @@ export default function PatientsPage() {
                 placeholder="Search by name, ID, location..."
                 className="w-full md:w-80 px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
               />
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              <svg
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
               </svg>
               {searchTerm && (
                 <button
-                  onClick={() => setSearchTerm('')}
+                  onClick={() => setSearchTerm("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 >
                   ✕
@@ -1089,14 +1923,30 @@ export default function PatientsPage() {
           <table className="w-full">
             <thead className="bg-gray-50 border-b-2 border-gray-200">
               <tr>
-                <th className="text-left py-4 px-8 font-semibold text-gray-700">Patient ID</th>
-                <th className="text-left py-4 px-8 font-semibold text-gray-700">Name</th>
-                <th className="text-left py-4 px-8 font-semibold text-gray-700">Age</th>
-                <th className="text-left py-4 px-8 font-semibold text-gray-700">Sex</th>
-                <th className="text-left py-4 px-8 font-semibold text-gray-700">Location</th>
-                <th className="text-left py-4 px-8 font-semibold text-gray-700">Demographics</th>
-                <th className="text-left py-4 px-8 font-semibold text-gray-700">Registered</th>
-                <th className="text-left py-4 px-8 font-semibold text-gray-700">Action</th>
+                <th className="text-left py-4 px-8 font-semibold text-gray-700">
+                  Patient ID
+                </th>
+                <th className="text-left py-4 px-8 font-semibold text-gray-700">
+                  Name
+                </th>
+                <th className="text-left py-4 px-8 font-semibold text-gray-700">
+                  Age
+                </th>
+                <th className="text-left py-4 px-8 font-semibold text-gray-700">
+                  Sex
+                </th>
+                <th className="text-left py-4 px-8 font-semibold text-gray-700">
+                  Location
+                </th>
+                <th className="text-left py-4 px-8 font-semibold text-gray-700">
+                  Demographics
+                </th>
+                <th className="text-left py-4 px-8 font-semibold text-gray-700">
+                  Registered
+                </th>
+                <th className="text-left py-4 px-8 font-semibold text-gray-700">
+                  Action
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1108,51 +1958,59 @@ export default function PatientsPage() {
                     patient.patient_id_no?.toLowerCase().includes(search) ||
                     patient.first_name?.toLowerCase().includes(search) ||
                     patient.last_name?.toLowerCase().includes(search) ||
-                    `${patient.first_name} ${patient.last_name}`.toLowerCase().includes(search) ||
+                    `${patient.first_name} ${patient.last_name}`
+                      .toLowerCase()
+                      .includes(search) ||
                     patient.municipality?.toLowerCase().includes(search) ||
                     patient.province?.toLowerCase().includes(search) ||
                     patient.contact_no?.toLowerCase().includes(search)
                   );
                 })
                 .map((patient) => (
-                <tr
-                  key={patient.id}
-                  className="border-b border-gray-100 hover:bg-[#F0F4F1] transition"
-                >
-                  <td className="py-4 px-8 font-semibold text-gray-800">{patient.patient_id_no}</td>
-                  <td className="py-4 px-8 font-medium text-gray-800">
-                    {patient.first_name} {patient.last_name}
-                  </td>
-                  <td className="py-4 px-8 text-gray-600">{patient.age}</td>
-                  <td className="py-4 px-8 text-gray-600">{patient.sex}</td>
-                  <td className="py-4 px-8 text-gray-600">
-                    {patient.municipality}, {patient.province}
-                  </td>
-                  <td className="py-4 px-8">
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        patient.demographics_complete
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}
-                    >
-                      {patient.demographics_complete ? '✓ Complete' : 'Incomplete'}
-                    </span>
-                  </td>
-                  <td className="py-4 px-8 text-gray-600">{new Date(patient.date_registered).toLocaleDateString()}</td>
-                  <td className="py-4 px-8">
-                    <button 
-                      onClick={() => {
-                        setSelectedPatient(patient);
-                        setShowDetailsModal(true);
-                      }}
-                      className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-sm flex items-center gap-1 hover:underline transition"
-                    >
-                      View Details <ArrowRight className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                  <tr
+                    key={patient.id}
+                    className="border-b border-gray-100 hover:bg-[#F0F4F1] transition"
+                  >
+                    <td className="py-4 px-8 font-semibold text-gray-800">
+                      {patient.patient_id_no}
+                    </td>
+                    <td className="py-4 px-8 font-medium text-gray-800">
+                      {patient.first_name} {patient.last_name}
+                    </td>
+                    <td className="py-4 px-8 text-gray-600">{patient.age}</td>
+                    <td className="py-4 px-8 text-gray-600">{patient.sex}</td>
+                    <td className="py-4 px-8 text-gray-600">
+                      {patient.municipality}, {patient.province}
+                    </td>
+                    <td className="py-4 px-8">
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          patient.demographics_complete
+                            ? "bg-green-100 text-green-800"
+                            : "bg-yellow-100 text-yellow-800"
+                        }`}
+                      >
+                        {patient.demographics_complete
+                          ? "✓ Complete"
+                          : "Incomplete"}
+                      </span>
+                    </td>
+                    <td className="py-4 px-8 text-gray-600">
+                      {new Date(patient.date_registered).toLocaleDateString()}
+                    </td>
+                    <td className="py-4 px-8">
+                      <button
+                        onClick={() => {
+                          setSelectedPatient(patient);
+                          setShowDetailsModal(true);
+                        }}
+                        className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-sm flex items-center gap-1 hover:underline transition"
+                      >
+                        View Details <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
@@ -1160,12 +2018,18 @@ export default function PatientsPage() {
 
       {/* Patient Details Modal */}
       {showDetailsModal && selectedPatient && (
-        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4" style={{
-          animation: 'fadeIn 0.3s ease-out'
-        }}>
-          <div className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" style={{
-            animation: 'slideInFromTop 0.4s ease-out'
-          }}>
+        <div
+          className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          style={{
+            animation: "fadeIn 0.3s ease-out",
+          }}
+        >
+          <div
+            className="bg-white rounded-lg shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+            style={{
+              animation: "slideInFromTop 0.4s ease-out",
+            }}
+          >
             {/* Modal Header */}
             <div className="sticky top-0 bg-gradient-to-r from-[#3B6255] to-green-900 text-white px-8 py-6 flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -1193,100 +2057,170 @@ export default function PatientsPage() {
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase">Patient ID</label>
-                    <p className="text-base font-semibold text-gray-800 mt-1">{selectedPatient.patient_id_no}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase">Full Name</label>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Patient ID
+                    </label>
                     <p className="text-base font-semibold text-gray-800 mt-1">
-                      {selectedPatient.first_name} {selectedPatient.middle_name ? selectedPatient.middle_name + ' ' : ''}{selectedPatient.last_name}
+                      {selectedPatient.patient_id_no}
                     </p>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase">Age</label>
-                    <p className="text-base font-semibold text-gray-800 mt-1">{selectedPatient.age} years old</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase">Sex</label>
-                    <p className="text-base font-semibold text-gray-800 mt-1">{selectedPatient.sex}</p>
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase">Birthdate</label>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Full Name
+                    </label>
                     <p className="text-base font-semibold text-gray-800 mt-1">
-                      {new Date(selectedPatient.birthdate).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
-                      })}
+                      {selectedPatient.first_name}{" "}
+                      {selectedPatient.middle_name
+                        ? selectedPatient.middle_name + " "
+                        : ""}
+                      {selectedPatient.last_name}
                     </p>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase">Contact No.</label>
-                    <p className="text-base font-semibold text-gray-800 mt-1">{selectedPatient.contact_no}</p>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Age
+                    </label>
+                    <p className="text-base font-semibold text-gray-800 mt-1">
+                      {selectedPatient.age} years old
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Sex
+                    </label>
+                    <p className="text-base font-semibold text-gray-800 mt-1">
+                      {selectedPatient.sex}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Birthdate
+                    </label>
+                    <p className="text-base font-semibold text-gray-800 mt-1">
+                      {new Date(selectedPatient.birthdate).toLocaleDateString(
+                        "en-US",
+                        {
+                          year: "numeric",
+                          month: "long",
+                          day: "numeric",
+                        },
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Contact No.
+                    </label>
+                    <p className="text-base font-semibold text-gray-800 mt-1">
+                      {selectedPatient.contact_no}
+                    </p>
                   </div>
                 </div>
               </div>
 
               {/* Address Information */}
               <div className="bg-purple-50 p-6 rounded-lg border border-purple-200">
-                <h4 className="text-lg font-bold text-gray-800 mb-4">Address</h4>
+                <h4 className="text-lg font-bold text-gray-800 mb-4">
+                  Address
+                </h4>
                 <div className="space-y-2 text-gray-700">
                   {selectedPatient.address_house_no && (
-                    <p><span className="font-semibold">House No.:</span> {selectedPatient.address_house_no}</p>
+                    <p>
+                      <span className="font-semibold">House No.:</span>{" "}
+                      {selectedPatient.address_house_no}
+                    </p>
                   )}
                   {selectedPatient.address_street && (
-                    <p><span className="font-semibold">Street:</span> {selectedPatient.address_street}</p>
+                    <p>
+                      <span className="font-semibold">Street:</span>{" "}
+                      {selectedPatient.address_street}
+                    </p>
                   )}
                   {selectedPatient.address_barangay && (
-                    <p><span className="font-semibold">Barangay:</span> {selectedPatient.address_barangay}</p>
+                    <p>
+                      <span className="font-semibold">Barangay:</span>{" "}
+                      {selectedPatient.address_barangay}
+                    </p>
                   )}
-                  <p><span className="font-semibold">Municipality:</span> {selectedPatient.municipality}</p>
-                  <p><span className="font-semibold">Province:</span> {selectedPatient.province}</p>
+                  <p>
+                    <span className="font-semibold">Municipality:</span>{" "}
+                    {selectedPatient.municipality}
+                  </p>
+                  <p>
+                    <span className="font-semibold">Province:</span>{" "}
+                    {selectedPatient.province}
+                  </p>
                 </div>
               </div>
 
               {/* Medical Information */}
               <div className="bg-amber-50 p-6 rounded-lg border border-amber-200">
-                <h4 className="text-lg font-bold text-gray-800 mb-4">Medical Information</h4>
+                <h4 className="text-lg font-bold text-gray-800 mb-4">
+                  Medical Information
+                </h4>
                 <div className="space-y-4">
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase">Medical History</label>
-                    <p className="text-sm text-gray-700 mt-2 bg-white p-3 rounded border border-amber-100">{selectedPatient.medical_history}</p>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Medical History
+                    </label>
+                    <p className="text-sm text-gray-700 mt-2 bg-white p-3 rounded border border-amber-100">
+                      {selectedPatient.medical_history}
+                    </p>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase">Medications</label>
-                    <p className="text-sm text-gray-700 mt-2 bg-white p-3 rounded border border-amber-100">{selectedPatient.medications}</p>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Medications
+                    </label>
+                    <p className="text-sm text-gray-700 mt-2 bg-white p-3 rounded border border-amber-100">
+                      {selectedPatient.medications}
+                    </p>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase">Allergies</label>
-                    <p className="text-sm text-gray-700 mt-2 bg-white p-3 rounded border border-amber-100">{selectedPatient.allergy}</p>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Allergies
+                    </label>
+                    <p className="text-sm text-gray-700 mt-2 bg-white p-3 rounded border border-amber-100">
+                      {selectedPatient.allergy}
+                    </p>
                   </div>
                 </div>
               </div>
 
               {/* Registration Info */}
               <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
-                <h4 className="text-lg font-bold text-gray-800 mb-4">Registration</h4>
+                <h4 className="text-lg font-bold text-gray-800 mb-4">
+                  Registration
+                </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase">Registered On</label>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Registered On
+                    </label>
                     <p className="text-base font-semibold text-gray-800 mt-1">
-                      {new Date(selectedPatient.date_registered).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'long',
-                        day: 'numeric'
+                      {new Date(
+                        selectedPatient.date_registered,
+                      ).toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
                       })}
                     </p>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-gray-600 uppercase">Demographics Status</label>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Demographics Status
+                    </label>
                     <p className="text-base font-semibold text-gray-800 mt-1">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        selectedPatient.demographics_complete
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {selectedPatient.demographics_complete ? '✓ Complete' : 'Incomplete'}
+                      <span
+                        className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          selectedPatient.demographics_complete
+                            ? "bg-green-100 text-green-800"
+                            : "bg-yellow-100 text-yellow-800"
+                        }`}
+                      >
+                        {selectedPatient.demographics_complete
+                          ? "✓ Complete"
+                          : "Incomplete"}
                       </span>
                     </p>
                   </div>
@@ -1317,38 +2251,61 @@ export default function PatientsPage() {
             {/* Success Header */}
             <div className="bg-gradient-to-r from-green-600 to-green-700 text-white px-8 py-6 flex items-center gap-3">
               <CheckCircle className="w-8 h-8" />
-              <h2 className="text-2xl font-bold">Test Results Saved Successfully!</h2>
+              <h2 className="text-2xl font-bold">
+                Test Results Saved Successfully!
+              </h2>
             </div>
 
             {/* Summary Content */}
             <div className="p-8 space-y-6">
               <div className="space-y-2">
-                <p className="text-gray-600"><span className="font-semibold">Patient:</span> {newPatientName}</p>
-                <p className="text-gray-600"><span className="font-semibold">Section:</span> {selectedSection}</p>
+                <p className="text-gray-600">
+                  <span className="font-semibold">Patient:</span>{" "}
+                  {newPatientName}
+                </p>
+                <p className="text-gray-600">
+                  <span className="font-semibold">Section:</span>{" "}
+                  {selectedSection}
+                </p>
               </div>
 
               {/* Saved Tests List */}
               <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                <h3 className="font-semibold text-gray-700 mb-3">Test Results Added:</h3>
+                <h3 className="font-semibold text-gray-700 mb-3">
+                  Test Results Added:
+                </h3>
                 {savedTestsData.map((test, index) => (
-                  <div key={index} className="bg-white p-3 rounded border border-gray-200">
+                  <div
+                    key={index}
+                    className="bg-white p-3 rounded border border-gray-200"
+                  >
                     <p className="font-semibold text-gray-800">{test.name}</p>
-                    <p className="text-sm text-gray-600">Result: <span className="text-[#3B6255] font-semibold">{test.value} {test.unit}</span></p>
-                    <p className="text-sm text-gray-600">Reference: {test.range} {test.unit}</p>
+                    <p className="text-sm text-gray-600">
+                      Result:{" "}
+                      <span className="text-[#3B6255] font-semibold">
+                        {test.value} {test.unit}
+                      </span>
+                    </p>
+                    <p className="text-sm text-gray-600">
+                      Reference: {test.range} {test.unit}
+                    </p>
                   </div>
                 ))}
               </div>
 
               {/* Message */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-                <p className="text-gray-700">Redirecting to Results page in <span className="font-bold text-[#3B6255]">3 seconds</span>...</p>
+                <p className="text-gray-700">
+                  Redirecting to Results page in{" "}
+                  <span className="font-bold text-[#3B6255]">3 seconds</span>...
+                </p>
               </div>
             </div>
 
             {/* Footer */}
             <div className="bg-gray-50 border-t border-gray-200 px-8 py-4 flex justify-end gap-3">
               <button
-                onClick={() => router.push('/dashboard/results')}
+                onClick={() => router.push("/dashboard/results")}
                 className="px-6 py-2 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold"
               >
                 Go to Results Now →
@@ -1398,11 +2355,11 @@ export default function PatientsPage() {
                     value={selectedSection}
                     onChange={(e) => {
                       setSelectedSection(e.target.value);
-                      setSelectedTest('');
-                      setResultValue('');
+                      setSelectedTest("");
+                      setResultValue("");
                     }}
                     className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
-                      testErrors.section ? 'border-red-500' : 'border-gray-300'
+                      testErrors.section ? "border-red-500" : "border-gray-300"
                     }`}
                   >
                     <option value="">--Select Section--</option>
@@ -1412,7 +2369,11 @@ export default function PatientsPage() {
                       </option>
                     ))}
                   </select>
-                  {testErrors.section && <p className="text-red-500 text-sm mt-1">{testErrors.section}</p>}
+                  {testErrors.section && (
+                    <p className="text-red-500 text-sm mt-1">
+                      {testErrors.section}
+                    </p>
+                  )}
                 </div>
 
                 {/* Test Name */}
@@ -1421,83 +2382,153 @@ export default function PatientsPage() {
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                       Test Name <span className="text-red-500">*</span>
                     </label>
-                    <select
-                      value={selectedTest}
-                      onChange={(e) => {
-                        setSelectedTest(e.target.value);
-                        setResultValue('');
-                      }}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
-                        testErrors.test ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    >
-                      <option value="">--Select Test--</option>
-                      {[...currentTests].sort((a, b) => a.name.localeCompare(b.name)).map((test) => (
-                        <option key={test.name} value={test.name}>
-                          {test.name}
-                        </option>
-                      ))}
-                    </select>
-                    {testErrors.test && <p className="text-red-500 text-sm mt-1">{testErrors.test}</p>}
+                    {selectedSection === "CLINICAL CHEMISTRY" ? (
+                      <select
+                        value={selectedTest}
+                        onChange={(e) => {
+                          setSelectedTest(e.target.value);
+                          setResultValue("");
+                        }}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
+                          testErrors.test ? "border-red-500" : "border-gray-300"
+                        }`}
+                      >
+                        <option value="">-- Select Test --</option>
+                        <optgroup label="── Panels / Groups ──">
+                          {CC_GROUPED_TEST_NAMES.map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="── Individual Tests ──">
+                          {CC_INDIVIDUAL_TESTS.map((t) => (
+                            <option key={t.name} value={t.name}>
+                              {t.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      </select>
+                    ) : (
+                      <select
+                        value={selectedTest}
+                        onChange={(e) => {
+                          setSelectedTest(e.target.value);
+                          setResultValue("");
+                        }}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
+                          testErrors.test ? "border-red-500" : "border-gray-300"
+                        }`}
+                      >
+                        <option value="">--Select Test--</option>
+                        {[...currentTests]
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((test) => (
+                            <option key={test.name} value={test.name}>
+                              {test.name}
+                            </option>
+                          ))}
+                      </select>
+                    )}
+                    {testErrors.test && (
+                      <p className="text-red-500 text-sm mt-1">
+                        {testErrors.test}
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {/* Result Value - CBC Special Case */}
-                {selectedTest === 'CBC' && (
+                {selectedTest === "CBC" && (
                   <div className="space-y-4">
                     <label className="block text-sm font-semibold text-gray-700">
-                    
                       CBC Components <span className="text-red-500">*</span>
-                        
                     </label>
-                             <span className="text-sm font-bold text-gray-700">WBC Count</span>   
+                    <span className="text-sm font-bold text-gray-700">
+                      WBC Count
+                    </span>
                     <div className="grid grid-cols-1 gap-3">
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Neutrophils (%)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Neutrophils (%)
+                        </label>
                         <input
                           type="text"
                           value={cbcValues.neutrophils}
-                          onChange={(e) => setCbcValues({...cbcValues, neutrophils: e.target.value})}
+                          onChange={(e) =>
+                            setCbcValues({
+                              ...cbcValues,
+                              neutrophils: e.target.value,
+                            })
+                          }
                           placeholder="45-75"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Lymphocytes (%)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Lymphocytes (%)
+                        </label>
                         <input
                           type="text"
                           value={cbcValues.lymphocytes}
-                          onChange={(e) => setCbcValues({...cbcValues, lymphocytes: e.target.value})}
+                          onChange={(e) =>
+                            setCbcValues({
+                              ...cbcValues,
+                              lymphocytes: e.target.value,
+                            })
+                          }
                           placeholder="16-46"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Monocytes (%)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Monocytes (%)
+                        </label>
                         <input
                           type="text"
                           value={cbcValues.monocytes}
-                          onChange={(e) => setCbcValues({...cbcValues, monocytes: e.target.value})}
+                          onChange={(e) =>
+                            setCbcValues({
+                              ...cbcValues,
+                              monocytes: e.target.value,
+                            })
+                          }
                           placeholder="4-11"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Eosinophils (%)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Eosinophils (%)
+                        </label>
                         <input
                           type="text"
                           value={cbcValues.eosinophils}
-                          onChange={(e) => setCbcValues({...cbcValues, eosinophils: e.target.value})}
+                          onChange={(e) =>
+                            setCbcValues({
+                              ...cbcValues,
+                              eosinophils: e.target.value,
+                            })
+                          }
                           placeholder="0-8"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Basophils (%)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Basophils (%)
+                        </label>
                         <input
                           type="text"
                           value={cbcValues.basophils}
-                          onChange={(e) => setCbcValues({...cbcValues, basophils: e.target.value})}
+                          onChange={(e) =>
+                            setCbcValues({
+                              ...cbcValues,
+                              basophils: e.target.value,
+                            })
+                          }
                           placeholder="0-3"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
@@ -1506,62 +2537,104 @@ export default function PatientsPage() {
 
                     <div className="pt-3 border-t border-gray-200 space-y-3">
                       <label className="block text-sm font-semibold text-gray-700">
-                        Red Blood Cell Indices (MCV, MCH, RDW) <span className="text-red-500">*</span>
+                        Red Blood Cell Indices (MCV, MCH, RDW){" "}
+                        <span className="text-red-500">*</span>
                       </label>
                       <div className="grid grid-cols-1 gap-3">
                         <div>
-                          <label className="text-xs font-semibold text-gray-600">Mean Corpuscular Volume (MCV) (fL)</label>
+                          <label className="text-xs font-semibold text-gray-600">
+                            Mean Corpuscular Volume (MCV) (fL)
+                          </label>
                           <input
                             type="text"
                             value={rbcValues.mcv}
-                            onChange={(e) => setRbcValues({ ...rbcValues, mcv: e.target.value })}
+                            onChange={(e) =>
+                              setRbcValues({
+                                ...rbcValues,
+                                mcv: e.target.value,
+                              })
+                            }
                             placeholder="80 - 100"
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                           />
-                          <p className="text-xs text-gray-500 mt-1">Reference Range: 80 - 100 fL</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Reference Range: 80 - 100 fL
+                          </p>
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-gray-600">Mean Corpuscular Hemoglobin (MCH) (pg)</label>
+                          <label className="text-xs font-semibold text-gray-600">
+                            Mean Corpuscular Hemoglobin (MCH) (pg)
+                          </label>
                           <input
                             type="text"
                             value={rbcValues.mch}
-                            onChange={(e) => setRbcValues({ ...rbcValues, mch: e.target.value })}
+                            onChange={(e) =>
+                              setRbcValues({
+                                ...rbcValues,
+                                mch: e.target.value,
+                              })
+                            }
                             placeholder="27 - 31"
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                           />
-                          <p className="text-xs text-gray-500 mt-1">Reference Range: 27 - 31 pg</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Reference Range: 27 - 31 pg
+                          </p>
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-gray-600">Red Cell Distribution Width (RDW) (%)</label>
+                          <label className="text-xs font-semibold text-gray-600">
+                            Red Cell Distribution Width (RDW) (%)
+                          </label>
                           <input
                             type="text"
                             value={rbcValues.rdw}
-                            onChange={(e) => setRbcValues({ ...rbcValues, rdw: e.target.value })}
+                            onChange={(e) =>
+                              setRbcValues({
+                                ...rbcValues,
+                                rdw: e.target.value,
+                              })
+                            }
                             placeholder="11.5 - 14.5"
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                           />
-                          <p className="text-xs text-gray-500 mt-1">Reference Range: 11.5% - 14.5%</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Reference Range: 11.5% - 14.5%
+                          </p>
                         </div>
                       </div>
-                      {testErrors.rbc && <p className="text-red-500 text-sm">{testErrors.rbc}</p>}
+                      {testErrors.rbc && (
+                        <p className="text-red-500 text-sm">{testErrors.rbc}</p>
+                      )}
                     </div>
 
                     <div className="pt-3 border-t border-gray-200 space-y-3">
                       <label className="block text-sm font-semibold text-gray-700">
-                        Hemoglobin (Hb/Hgb) <span className="text-red-500">*</span>
+                        Hemoglobin (Hb/Hgb){" "}
+                        <span className="text-red-500">*</span>
                       </label>
                       <div>
                         <input
                           type="text"
                           value={hemoglobinValue}
                           onChange={(e) => setHemoglobinValue(e.target.value)}
-                          placeholder={patientSex === 'Male' ? '14.0 - 17.0' : '12.0 - 15.0'}
+                          placeholder={
+                            patientSex === "Male"
+                              ? "14.0 - 17.0"
+                              : "12.0 - 15.0"
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                          Reference Range: {patientSex === 'Male' ? '14.0 - 17.0 g/dL' : '12.0 - 15.0 g/dL'}
+                          Reference Range:{" "}
+                          {patientSex === "Male"
+                            ? "14.0 - 17.0 g/dL"
+                            : "12.0 - 15.0 g/dL"}
                         </p>
-                        {testErrors.hemoglobin && <p className="text-red-500 text-sm mt-1">{testErrors.hemoglobin}</p>}
+                        {testErrors.hemoglobin && (
+                          <p className="text-red-500 text-sm mt-1">
+                            {testErrors.hemoglobin}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -1574,13 +2647,20 @@ export default function PatientsPage() {
                           type="text"
                           value={hematocritValue}
                           onChange={(e) => setHematocritValue(e.target.value)}
-                          placeholder={patientSex === 'Male' ? '40 - 54' : '37 - 47'}
+                          placeholder={
+                            patientSex === "Male" ? "40 - 54" : "37 - 47"
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                          Reference Range: {patientSex === 'Male' ? '40% - 54%' : '37% - 47%'}
+                          Reference Range:{" "}
+                          {patientSex === "Male" ? "40% - 54%" : "37% - 47%"}
                         </p>
-                        {testErrors.hematocrit && <p className="text-red-500 text-sm mt-1">{testErrors.hematocrit}</p>}
+                        {testErrors.hematocrit && (
+                          <p className="text-red-500 text-sm mt-1">
+                            {testErrors.hematocrit}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -1590,7 +2670,9 @@ export default function PatientsPage() {
                       </label>
                       <textarea
                         value={peripheralSmearValue}
-                        onChange={(e) => setPeripheralSmearValue(e.target.value)}
+                        onChange={(e) =>
+                          setPeripheralSmearValue(e.target.value)
+                        }
                         placeholder="Enter findings (optional)"
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white min-h-[80px]"
                       />
@@ -1604,154 +2686,235 @@ export default function PatientsPage() {
                         <input
                           type="text"
                           value={plateletCountValue}
-                          onChange={(e) => setPlateletCountValue(e.target.value)}
+                          onChange={(e) =>
+                            setPlateletCountValue(e.target.value)
+                          }
                           placeholder="150 - 450"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 150 - 450 x 10⁹/L</p>
-                        {testErrors.platelet && <p className="text-red-500 text-sm mt-1">{testErrors.platelet}</p>}
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: 150 - 450 x 10⁹/L
+                        </p>
+                        {testErrors.platelet && (
+                          <p className="text-red-500 text-sm mt-1">
+                            {testErrors.platelet}
+                          </p>
+                        )}
                       </div>
                     </div>
 
-                    {testErrors.cbc && <p className="text-red-500 text-sm">{testErrors.cbc}</p>}
+                    {testErrors.cbc && (
+                      <p className="text-red-500 text-sm">{testErrors.cbc}</p>
+                    )}
                   </div>
                 )}
 
                 {/* Result Value - RBC Indices Special Case */}
-                {selectedTest === 'RBC Indices (MCV, MCH, RDW)' && (
+                {selectedTest === "RBC Indices (MCV, MCH, RDW)" && (
                   <div className="space-y-4">
                     <label className="block text-sm font-semibold text-gray-700">
-                      RBC Indices Components <span className="text-red-500">*</span>
+                      RBC Indices Components{" "}
+                      <span className="text-red-500">*</span>
                     </label>
-                    
+
                     <div className="grid grid-cols-1 gap-3">
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">MCV (fL)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          MCV (fL)
+                        </label>
                         <input
                           type="text"
                           value={rbcValues.mcv}
-                          onChange={(e) => setRbcValues({...rbcValues, mcv: e.target.value})}
+                          onChange={(e) =>
+                            setRbcValues({ ...rbcValues, mcv: e.target.value })
+                          }
                           placeholder="80-100"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 80 - 100 fL</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: 80 - 100 fL
+                        </p>
                       </div>
-                      
+
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">MCH (pg)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          MCH (pg)
+                        </label>
                         <input
                           type="text"
                           value={rbcValues.mch}
-                          onChange={(e) => setRbcValues({...rbcValues, mch: e.target.value})}
+                          onChange={(e) =>
+                            setRbcValues({ ...rbcValues, mch: e.target.value })
+                          }
                           placeholder="27-31"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 27 - 31 pg</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: 27 - 31 pg
+                        </p>
                       </div>
-                      
+
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">RDW (%)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          RDW (%)
+                        </label>
                         <input
                           type="text"
                           value={rbcValues.rdw}
-                          onChange={(e) => setRbcValues({...rbcValues, rdw: e.target.value})}
+                          onChange={(e) =>
+                            setRbcValues({ ...rbcValues, rdw: e.target.value })
+                          }
                           placeholder="11.5-14.5"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 11.5 - 14.5 %</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: 11.5 - 14.5 %
+                        </p>
                       </div>
                     </div>
                   </div>
                 )}
 
                 {/* Result Value - Hemoglobin Special Case */}
-                {selectedTest === 'Hemoglobin' && (
+                {selectedTest === "Hemoglobin" && (
                   <div className="space-y-4">
                     <label className="block text-sm font-semibold text-gray-700">
-                      Hemoglobin Value ({patientSex}) <span className="text-red-500">*</span>
+                      Hemoglobin Value ({patientSex}){" "}
+                      <span className="text-red-500">*</span>
                     </label>
-                    
+
                     <div className="grid grid-cols-1 gap-3">
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Hemoglobin (g/dL)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Hemoglobin (g/dL)
+                        </label>
                         <input
                           type="text"
                           value={hemoglobinValue}
                           onChange={(e) => setHemoglobinValue(e.target.value)}
-                          placeholder={patientSex === 'Male' ? '14.0-17.0' : '12.0-15.0'}
+                          placeholder={
+                            patientSex === "Male" ? "14.0-17.0" : "12.0-15.0"
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                          Reference Range ({patientSex}): {patientSex === 'Male' ? '14.0 - 17.0' : '12.0 - 15.0'} g/dL
+                          Reference Range ({patientSex}):{" "}
+                          {patientSex === "Male"
+                            ? "14.0 - 17.0"
+                            : "12.0 - 15.0"}{" "}
+                          g/dL
                         </p>
                       </div>
                     </div>
-                    {testErrors.hemoglobin && <p className="text-red-500 text-sm mt-1">{testErrors.hemoglobin}</p>}
+                    {testErrors.hemoglobin && (
+                      <p className="text-red-500 text-sm mt-1">
+                        {testErrors.hemoglobin}
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {/* Result Value - PT/INR, PTT Special Case */}
-                {selectedTest === 'PT/INR, PTT' && (
+                {selectedTest === "PT/INR, PTT" && (
                   <div className="space-y-4">
                     <label className="block text-sm font-semibold text-gray-700">
                       Coagulation Values <span className="text-red-500">*</span>
                     </label>
-                    
+
                     <div className="grid grid-cols-1 gap-3">
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">PT (seconds)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          PT (seconds)
+                        </label>
                         <input
                           type="text"
                           value={coagulationValues.pt}
-                          onChange={(e) => setCoagulationValues({...coagulationValues, pt: e.target.value})}
+                          onChange={(e) =>
+                            setCoagulationValues({
+                              ...coagulationValues,
+                              pt: e.target.value,
+                            })
+                          }
                           placeholder="11.0-13.5"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 11.0 - 13.5 seconds</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: 11.0 - 13.5 seconds
+                        </p>
                       </div>
-                      
+
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">INR</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          INR
+                        </label>
                         <input
                           type="text"
                           value={coagulationValues.inr}
-                          onChange={(e) => setCoagulationValues({...coagulationValues, inr: e.target.value})}
+                          onChange={(e) =>
+                            setCoagulationValues({
+                              ...coagulationValues,
+                              inr: e.target.value,
+                            })
+                          }
                           placeholder="0.8-1.2"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0.8 - 1.2</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: 0.8 - 1.2
+                        </p>
                       </div>
-                      
+
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">aPTT (seconds)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          aPTT (seconds)
+                        </label>
                         <input
                           type="text"
                           value={coagulationValues.aptt}
-                          onChange={(e) => setCoagulationValues({...coagulationValues, aptt: e.target.value})}
+                          onChange={(e) =>
+                            setCoagulationValues({
+                              ...coagulationValues,
+                              aptt: e.target.value,
+                            })
+                          }
                           placeholder="25.0-35.0"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 25.0 - 35.0 seconds</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: 25.0 - 35.0 seconds
+                        </p>
                       </div>
                     </div>
-                    {testErrors.coagulation && <p className="text-red-500 text-sm">{testErrors.coagulation}</p>}
+                    {testErrors.coagulation && (
+                      <p className="text-red-500 text-sm">
+                        {testErrors.coagulation}
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {/* Result Value - Routine Urinalysis (UA) Special Case */}
-                {selectedTest === 'Routine Urinalysis (UA)' && (
+                {selectedTest === "Routine Urinalysis (UA)" && (
                   <div className="space-y-4">
                     <label className="block text-sm font-semibold text-gray-700">
-                      Urinalysis Components <span className="text-red-500">*</span>
+                      Urinalysis Components{" "}
+                      <span className="text-red-500">*</span>
                     </label>
-                    
+
                     <div className="grid grid-cols-1 gap-3">
                       {/* Color (Dropdown) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Color</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Color
+                        </label>
                         <select
                           value={urinalysisValues.color}
-                          onChange={(e) => setUrinalysisValues({...urinalysisValues, color: e.target.value})}
+                          onChange={(e) =>
+                            setUrinalysisValues({
+                              ...urinalysisValues,
+                              color: e.target.value,
+                            })
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
                         >
                           <option value="">Select color</option>
@@ -1759,114 +2922,188 @@ export default function PatientsPage() {
                           <option value="Pale Yellow">Pale Yellow</option>
                           <option value="Amber">Amber</option>
                         </select>
-                        <p className="text-xs text-gray-500 mt-1">Choices: Clear, Pale Yellow, Amber</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Choices: Clear, Pale Yellow, Amber
+                        </p>
                       </div>
 
                       {/* Transparency (Dropdown) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Transparency</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Transparency
+                        </label>
                         <select
                           value={urinalysisValues.transparency}
-                          onChange={(e) => setUrinalysisValues({...urinalysisValues, transparency: e.target.value})}
+                          onChange={(e) =>
+                            setUrinalysisValues({
+                              ...urinalysisValues,
+                              transparency: e.target.value,
+                            })
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
                         >
                           <option value="">Select transparency</option>
                           <option value="Clear">Clear</option>
-                          <option value="Slightly Turbid">Slightly Turbid</option>
+                          <option value="Slightly Turbid">
+                            Slightly Turbid
+                          </option>
                           <option value="Turbid">Turbid</option>
                           <option value="Very Turbid">Very Turbid</option>
                         </select>
-                        <p className="text-xs text-gray-500 mt-1">Choices: Clear, Slightly Turbid, Turbid, Very Turbid</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Choices: Clear, Slightly Turbid, Turbid, Very Turbid
+                        </p>
                       </div>
 
                       {/* pH (Text Input) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">pH</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          pH
+                        </label>
                         <input
                           type="text"
                           value={urinalysisValues.pH}
-                          onChange={(e) => setUrinalysisValues({...urinalysisValues, pH: e.target.value})}
+                          onChange={(e) =>
+                            setUrinalysisValues({
+                              ...urinalysisValues,
+                              pH: e.target.value,
+                            })
+                          }
                           placeholder="4.5-8.0"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 4.5 - 8.0</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: 4.5 - 8.0
+                        </p>
                       </div>
 
                       {/* Protein/Glucose (Dropdown) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Protein/Glucose</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Protein/Glucose
+                        </label>
                         <select
                           value={urinalysisValues.proteinGlucose}
-                          onChange={(e) => setUrinalysisValues({...urinalysisValues, proteinGlucose: e.target.value})}
+                          onChange={(e) =>
+                            setUrinalysisValues({
+                              ...urinalysisValues,
+                              proteinGlucose: e.target.value,
+                            })
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
                         >
                           <option value="">Select result</option>
                           <option value="Positive">Positive</option>
                           <option value="Negative">Negative</option>
                         </select>
-                        <p className="text-xs text-gray-500 mt-1">Choices: Positive, Negative</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Choices: Positive, Negative
+                        </p>
                       </div>
 
                       {/* Bilirubin/Ketone (Dropdown) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Bilirubin/Ketone</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Bilirubin/Ketone
+                        </label>
                         <select
                           value={urinalysisValues.bilirubinKetone}
-                          onChange={(e) => setUrinalysisValues({...urinalysisValues, bilirubinKetone: e.target.value})}
+                          onChange={(e) =>
+                            setUrinalysisValues({
+                              ...urinalysisValues,
+                              bilirubinKetone: e.target.value,
+                            })
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
                         >
                           <option value="">Select result</option>
                           <option value="Positive">Positive</option>
                           <option value="Negative">Negative</option>
                         </select>
-                        <p className="text-xs text-gray-500 mt-1">Choices: Positive, Negative</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Choices: Positive, Negative
+                        </p>
                       </div>
 
                       {/* Urobilinogen (Text Input) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Urobilinogen (IEU/dL)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Urobilinogen (IEU/dL)
+                        </label>
                         <input
                           type="text"
                           value={urinalysisValues.urobilinogen}
-                          onChange={(e) => setUrinalysisValues({...urinalysisValues, urobilinogen: e.target.value})}
+                          onChange={(e) =>
+                            setUrinalysisValues({
+                              ...urinalysisValues,
+                              urobilinogen: e.target.value,
+                            })
+                          }
                           placeholder="0.2-1.0"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0.2 - 1.0 IEU/dL</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: 0.2 - 1.0 IEU/dL
+                        </p>
                       </div>
 
                       {/* WBC (Microscopic) (Text Input) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">WBC (Microscopic) (hpf)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          WBC (Microscopic) (hpf)
+                        </label>
                         <input
                           type="text"
                           value={urinalysisValues.wbcMicroscopic}
-                          onChange={(e) => setUrinalysisValues({...urinalysisValues, wbcMicroscopic: e.target.value})}
+                          onChange={(e) =>
+                            setUrinalysisValues({
+                              ...urinalysisValues,
+                              wbcMicroscopic: e.target.value,
+                            })
+                          }
                           placeholder="0-5"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0 - 5 hpf</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: 0 - 5 hpf
+                        </p>
                       </div>
 
                       {/* RBC (Microscopic) (Text Input) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">RBC (Microscopic) (hpf)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          RBC (Microscopic) (hpf)
+                        </label>
                         <input
                           type="text"
                           value={urinalysisValues.rbcMicroscopic}
-                          onChange={(e) => setUrinalysisValues({...urinalysisValues, rbcMicroscopic: e.target.value})}
+                          onChange={(e) =>
+                            setUrinalysisValues({
+                              ...urinalysisValues,
+                              rbcMicroscopic: e.target.value,
+                            })
+                          }
                           placeholder="0-2"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                        <p className="text-xs text-gray-500 mt-1">Reference Range: 0 - 2 hpf</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Reference Range: 0 - 2 hpf
+                        </p>
                       </div>
 
                       {/* Bacteria/Casts/Crystals (Dropdown) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Bacteria/Casts/Crystals</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Bacteria/Casts/Crystals
+                        </label>
                         <select
                           value={urinalysisValues.bacteriaCastsCrystals}
-                          onChange={(e) => setUrinalysisValues({...urinalysisValues, bacteriaCastsCrystals: e.target.value})}
+                          onChange={(e) =>
+                            setUrinalysisValues({
+                              ...urinalysisValues,
+                              bacteriaCastsCrystals: e.target.value,
+                            })
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
                         >
                           <option value="">Select result</option>
@@ -1875,26 +3112,36 @@ export default function PatientsPage() {
                           <option value="Few">Few</option>
                           <option value="Many">Many</option>
                         </select>
-                        <p className="text-xs text-gray-500 mt-1">Choices: None, Rare, Few, Many</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Choices: None, Rare, Few, Many
+                        </p>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {selectedTest === 'Culture and Sensitivity' && (
+                {selectedTest === "Culture and Sensitivity" && (
                   <div className="space-y-4">
                     <label className="block text-sm font-semibold text-gray-700">
-                      Culture and Sensitivity <span className="text-red-500">*</span>
+                      Culture and Sensitivity{" "}
+                      <span className="text-red-500">*</span>
                     </label>
-                    
+
                     <div className="grid grid-cols-1 gap-3">
                       {/* Culture (Text Input) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Culture</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Culture
+                        </label>
                         <input
                           type="text"
                           value={cultureSensitivityValues.culture}
-                          onChange={(e) => setCultureSensitivityValues({...cultureSensitivityValues, culture: e.target.value})}
+                          onChange={(e) =>
+                            setCultureSensitivityValues({
+                              ...cultureSensitivityValues,
+                              culture: e.target.value,
+                            })
+                          }
                           placeholder="e.g. Staphylococcus aureus"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
@@ -1902,11 +3149,18 @@ export default function PatientsPage() {
 
                       {/* Preliminary Report (Text Input) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Preliminary Report</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Preliminary Report
+                        </label>
                         <input
                           type="text"
                           value={cultureSensitivityValues.preliminaryReport}
-                          onChange={(e) => setCultureSensitivityValues({...cultureSensitivityValues, preliminaryReport: e.target.value})}
+                          onChange={(e) =>
+                            setCultureSensitivityValues({
+                              ...cultureSensitivityValues,
+                              preliminaryReport: e.target.value,
+                            })
+                          }
                           placeholder="e.g. No growth after 24/48 hours"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
@@ -1914,11 +3168,18 @@ export default function PatientsPage() {
 
                       {/* Final Report (Text Input) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Final Report</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Final Report
+                        </label>
                         <input
                           type="text"
                           value={cultureSensitivityValues.finalReport}
-                          onChange={(e) => setCultureSensitivityValues({...cultureSensitivityValues, finalReport: e.target.value})}
+                          onChange={(e) =>
+                            setCultureSensitivityValues({
+                              ...cultureSensitivityValues,
+                              finalReport: e.target.value,
+                            })
+                          }
                           placeholder="e.g. No growth after 5-7 days"
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
@@ -1926,76 +3187,549 @@ export default function PatientsPage() {
 
                       {/* Sensitivity (Antibiogram) (Dropdown) */}
                       <div>
-                        <label className="text-xs font-semibold text-gray-600">Sensitivity (Antibiogram)</label>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Sensitivity (Antibiogram)
+                        </label>
                         <select
                           value={cultureSensitivityValues.sensitivity}
-                          onChange={(e) => setCultureSensitivityValues({...cultureSensitivityValues, sensitivity: e.target.value})}
+                          onChange={(e) =>
+                            setCultureSensitivityValues({
+                              ...cultureSensitivityValues,
+                              sensitivity: e.target.value,
+                            })
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
                         >
                           <option value="">Select sensitivity</option>
-                          <option value="S (Susceptible): The antibiotic is effective">S (Susceptible): The antibiotic is effective</option>
-                          <option value="I (Intermediate): The antibiotic may work at higher doses">I (Intermediate): The antibiotic may work at higher doses</option>
-                          <option value="R (Resistant): The antibiotic will not work">R (Resistant): The antibiotic will not work</option>
+                          <option value="S (Susceptible): The antibiotic is effective">
+                            S (Susceptible): The antibiotic is effective
+                          </option>
+                          <option value="I (Intermediate): The antibiotic may work at higher doses">
+                            I (Intermediate): The antibiotic may work at higher
+                            doses
+                          </option>
+                          <option value="R (Resistant): The antibiotic will not work">
+                            R (Resistant): The antibiotic will not work
+                          </option>
                         </select>
                       </div>
                     </div>
                   </div>
                 )}
 
-                {/* Result Value - Regular Tests */}
-                {selectedTest && selectedTest !== 'CBC' && selectedTest !== 'RBC Indices (MCV, MCH, RDW)' && selectedTest !== 'Hemoglobin' && selectedTest !== 'PT/INR, PTT' && selectedTest !== 'Routine Urinalysis (UA)' && selectedTest !== 'Culture and Sensitivity' && (
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Result Value <span className="text-red-500">*</span>
+                {/* Lipid Profile */}
+                {selectedTest === "Lipid Profile" && (
+                  <div className="space-y-3">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Lipid Profile Sub-Test{" "}
+                      <span className="text-red-500">*</span>
                     </label>
-                    <div className="flex gap-2">
-                      {TEST_DROPDOWN_OPTIONS[selectedTest] ? (
-                        <select
-                          value={resultValue}
-                          onChange={(e) => setResultValue(e.target.value)}
-                          className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
-                            testErrors.resultValue ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        >
-                          <option value="">Select result</option>
-                          {TEST_DROPDOWN_OPTIONS[selectedTest].map((option) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
+                    <select
+                      value={lipidSubTest}
+                      onChange={(e) => {
+                        setLipidSubTest(e.target.value);
+                        setLipidValue("");
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] outline-none transition text-gray-800 bg-white"
+                    >
+                      <option value="">-- Select Sub-Test --</option>
+                      {LIPID_PROFILE_TESTS.map((t) => (
+                        <option key={t.name} value={t.name}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                    {lipidSubTest && (
+                      <div className="space-y-2">
                         <input
                           type="text"
-                          value={resultValue}
-                          onChange={(e) => setResultValue(e.target.value)}
-                          placeholder={TEST_PLACEHOLDER_HINTS[selectedTest] || 'Enter result value'}
-                          className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                            testErrors.resultValue ? 'border-red-500' : 'border-gray-300'
-                          }`}
+                          value={lipidValue}
+                          onChange={(e) => setLipidValue(e.target.value)}
+                          placeholder="Enter result value"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] outline-none transition text-gray-800 placeholder-gray-500 bg-white"
                         />
-                      )}
-                      {currentTests.find((t) => t.name === selectedTest)?.unit && (
-                        <span className="px-4 py-2 bg-gray-100 rounded-lg flex items-center text-gray-700 font-semibold">
-                          {currentTests.find((t) => t.name === selectedTest)?.unit}
-                        </span>
-                      )}
-                    </div>
-                    {testErrors.resultValue && <p className="text-red-500 text-sm mt-1">{testErrors.resultValue}</p>}
+                        {LIPID_PROFILE_TESTS.find(
+                          (t) => t.name === lipidSubTest,
+                        )?.referenceRange && (
+                          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <p className="text-sm text-gray-700">
+                              <span className="font-semibold">
+                                Reference Range:
+                              </span>{" "}
+                              {
+                                LIPID_PROFILE_TESTS.find(
+                                  (t) => t.name === lipidSubTest,
+                                )?.referenceRange
+                              }{" "}
+                              (
+                              {
+                                LIPID_PROFILE_TESTS.find(
+                                  (t) => t.name === lipidSubTest,
+                                )?.unit
+                              }
+                              )
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {testErrors.lipid && (
+                      <p className="text-red-500 text-sm">{testErrors.lipid}</p>
+                    )}
                   </div>
                 )}
 
-                {/* Reference Range - Show for tests without dropdown options */}
-                {selectedTest && !TEST_DROPDOWN_OPTIONS[selectedTest] && (
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Reference Range
+                {/* Liver Function Test */}
+                {selectedTest === "Liver Function Test" && (
+                  <div className="space-y-3">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Liver Function Test Sub-Test{" "}
+                      <span className="text-red-500">*</span>
                     </label>
-                    <p className="text-gray-700 text-sm">
-                      {currentTests.find((t) => t.name === selectedTest)?.referenceRange} {currentTests.find((t) => t.name === selectedTest)?.unit && currentTests.find((t) => t.name === selectedTest)?.unit}
-                    </p>
+                    <select
+                      value={lftSubTest}
+                      onChange={(e) => {
+                        setLftSubTest(e.target.value);
+                        setLftValue("");
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] outline-none transition text-gray-800 bg-white"
+                    >
+                      <option value="">-- Select Sub-Test --</option>
+                      {LIVER_FUNCTION_TESTS.map((t) => (
+                        <option key={t.name} value={t.name}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                    {lftSubTest && (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          value={lftValue}
+                          onChange={(e) => setLftValue(e.target.value)}
+                          placeholder="Enter result value"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        {LIVER_FUNCTION_TESTS.find((t) => t.name === lftSubTest)
+                          ?.referenceRange && (
+                          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <p className="text-sm text-gray-700">
+                              <span className="font-semibold">
+                                Reference Range:
+                              </span>{" "}
+                              {
+                                LIVER_FUNCTION_TESTS.find(
+                                  (t) => t.name === lftSubTest,
+                                )?.referenceRange
+                              }{" "}
+                              (
+                              {
+                                LIVER_FUNCTION_TESTS.find(
+                                  (t) => t.name === lftSubTest,
+                                )?.unit
+                              }
+                              )
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {testErrors.lft && (
+                      <p className="text-red-500 text-sm">{testErrors.lft}</p>
+                    )}
                   </div>
                 )}
+
+                {/* Renal Function Test */}
+                {selectedTest === "Renal Function Test" && (
+                  <div className="space-y-3">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Renal Function Test Sub-Test{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={rftSubTest}
+                      onChange={(e) => {
+                        setRftSubTest(e.target.value);
+                        setRftValue("");
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] outline-none transition text-gray-800 bg-white"
+                    >
+                      <option value="">-- Select Sub-Test --</option>
+                      {RENAL_FUNCTION_TESTS.map((t) => (
+                        <option key={t.name} value={t.name}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                    {rftSubTest && (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          value={rftValue}
+                          onChange={(e) => setRftValue(e.target.value)}
+                          placeholder="Enter result value"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        {RENAL_FUNCTION_TESTS.find((t) => t.name === rftSubTest)
+                          ?.referenceRange && (
+                          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <p className="text-sm text-gray-700">
+                              <span className="font-semibold">
+                                Reference Range:
+                              </span>{" "}
+                              {
+                                RENAL_FUNCTION_TESTS.find(
+                                  (t) => t.name === rftSubTest,
+                                )?.referenceRange
+                              }{" "}
+                              (
+                              {
+                                RENAL_FUNCTION_TESTS.find(
+                                  (t) => t.name === rftSubTest,
+                                )?.unit
+                              }
+                              )
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {testErrors.rft && (
+                      <p className="text-red-500 text-sm">{testErrors.rft}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Glucose & Diabetes Monitoring */}
+                {selectedTest === "Glucose & Diabetes Monitoring" && (
+                  <div className="space-y-3">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Glucose & Diabetes Monitoring Sub-Test{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={glucoseSubTest}
+                      onChange={(e) => {
+                        setGlucoseSubTest(e.target.value);
+                        setGlucoseValue("");
+                      }}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] outline-none transition text-gray-800 bg-white"
+                    >
+                      <option value="">-- Select Sub-Test --</option>
+                      {GLUCOSE_TESTS.map((t) => (
+                        <option key={t.name} value={t.name}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                    {glucoseSubTest && (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          value={glucoseValue}
+                          onChange={(e) => setGlucoseValue(e.target.value)}
+                          placeholder="Enter result value"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                        />
+                        {GLUCOSE_TESTS.find((t) => t.name === glucoseSubTest)
+                          ?.referenceRange && (
+                          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                            <p className="text-sm text-gray-700">
+                              <span className="font-semibold">
+                                Reference Range:
+                              </span>{" "}
+                              {
+                                GLUCOSE_TESTS.find(
+                                  (t) => t.name === glucoseSubTest,
+                                )?.referenceRange
+                              }{" "}
+                              (
+                              {
+                                GLUCOSE_TESTS.find(
+                                  (t) => t.name === glucoseSubTest,
+                                )?.unit
+                              }
+                              )
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {testErrors.glucose && (
+                      <p className="text-red-500 text-sm">
+                        {testErrors.glucose}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Electrolytes */}
+                {selectedTest === "Electrolytes" && (
+                  <div className="space-y-4">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Electrolytes — All fields required{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <div className="bg-teal-50 border border-teal-200 rounded-lg p-4 space-y-3">
+                      {[
+                        {
+                          label: "Sodium (Na+)",
+                          key: "sodium",
+                          ph: "135 - 145",
+                          ref: "135 - 145 mmol/L",
+                          unit: "mmol/L",
+                        },
+                        {
+                          label: "Potassium (K+)",
+                          key: "potassium",
+                          ph: "3.4 - 5.0",
+                          ref: "3.4 - 5.0 mmol/L",
+                          unit: "mmol/L",
+                        },
+                        {
+                          label: "Chloride (Cl-)",
+                          key: "chloride",
+                          ph: "9 - 11",
+                          ref: "9 - 11 mmol/L",
+                          unit: "mmol/L",
+                        },
+                        {
+                          label: "Bicarbonate",
+                          key: "bicarbonate",
+                          ph: "22 - 28",
+                          ref: "22 - 28 mEq/L",
+                          unit: "mEq/L",
+                        },
+                        {
+                          label: "Calcium – Total (Ca++)",
+                          key: "calcium",
+                          ph: "8.5 - 10.5",
+                          ref: "8.5 - 10.5 mg/dL",
+                          unit: "mg/dL",
+                        },
+                        {
+                          label: "Phosphorus",
+                          key: "phosphorus",
+                          ph: "3.0 - 4.5",
+                          ref: "3.0 - 4.5 mmol/L",
+                          unit: "mmol/L",
+                        },
+                        {
+                          label: "Magnesium (Mg++)",
+                          key: "magnesium",
+                          ph: "1.8 - 3",
+                          ref: "1.8 - 3 mmol/L",
+                          unit: "mmol/L",
+                        },
+                      ].map(({ label, key, ph, ref, unit }) => (
+                        <div key={key}>
+                          <label className="text-xs font-semibold text-gray-600">
+                            {label}
+                          </label>
+                          <div className="flex gap-2 mt-1">
+                            <input
+                              type="text"
+                              value={(electrolytesValues as any)[key]}
+                              onChange={(e) =>
+                                setElectrolytesValues({
+                                  ...electrolytesValues,
+                                  [key]: e.target.value,
+                                })
+                              }
+                              placeholder={ph}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                            />
+                            <span className="px-3 py-2 bg-gray-100 rounded-lg text-gray-600 text-sm font-medium whitespace-nowrap">
+                              {unit}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Ref: {ref}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    {testErrors.electrolytes && (
+                      <p className="text-red-500 text-sm">
+                        {testErrors.electrolytes}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Arterial Blood Gas */}
+                {selectedTest === "Arterial Blood Gas" && (
+                  <div className="space-y-4">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Arterial Blood Gas — All fields required{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 space-y-3">
+                      {[
+                        {
+                          label: "pH",
+                          key: "pH",
+                          ph: "7.35 - 7.45",
+                          ref: "7.35 - 7.45",
+                          unit: "",
+                        },
+                        {
+                          label: "pCO2",
+                          key: "pco2",
+                          ph: "35 - 45",
+                          ref: "35 - 45 mmHg",
+                          unit: "mmHg",
+                        },
+                        {
+                          label: "PO2",
+                          key: "po2",
+                          ph: "80 - 100",
+                          ref: "80 - 100 mmHg",
+                          unit: "mmHg",
+                        },
+                        {
+                          label: "SaO2",
+                          key: "sao2",
+                          ph: "> 90",
+                          ref: "> 90%",
+                          unit: "%",
+                        },
+                        {
+                          label: "HCO3-",
+                          key: "hco3",
+                          ph: "22 - 26",
+                          ref: "22 - 26 mEq/L",
+                          unit: "mEq/L",
+                        },
+                      ].map(({ label, key, ph, ref, unit }) => (
+                        <div key={key}>
+                          <label className="text-xs font-semibold text-gray-600">
+                            {label}
+                          </label>
+                          <div className="flex gap-2 mt-1">
+                            <input
+                              type="text"
+                              value={(abgValues as any)[key]}
+                              onChange={(e) =>
+                                setAbgValues({
+                                  ...abgValues,
+                                  [key]: e.target.value,
+                                })
+                              }
+                              placeholder={ph}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] outline-none transition text-gray-800 placeholder-gray-500 bg-white"
+                            />
+                            {unit && (
+                              <span className="px-3 py-2 bg-gray-100 rounded-lg text-gray-600 text-sm font-medium whitespace-nowrap">
+                                {unit}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Ref: {ref}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    {testErrors.abg && (
+                      <p className="text-red-500 text-sm">{testErrors.abg}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Result Value - Regular Tests */}
+                {selectedTest &&
+                  selectedTest !== "CBC" &&
+                  selectedTest !== "RBC Indices (MCV, MCH, RDW)" &&
+                  selectedTest !== "Hemoglobin" &&
+                  selectedTest !== "PT/INR, PTT" &&
+                  selectedTest !== "Routine Urinalysis (UA)" &&
+                  selectedTest !== "Culture and Sensitivity" &&
+                  selectedTest !== "Lipid Profile" &&
+                  selectedTest !== "Liver Function Test" &&
+                  selectedTest !== "Renal Function Test" &&
+                  selectedTest !== "Electrolytes" &&
+                  selectedTest !== "Glucose & Diabetes Monitoring" &&
+                  selectedTest !== "Arterial Blood Gas" && (
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Result Value <span className="text-red-500">*</span>
+                      </label>
+                      <div className="flex gap-2">
+                        {TEST_DROPDOWN_OPTIONS[selectedTest] ? (
+                          <select
+                            value={resultValue}
+                            onChange={(e) => setResultValue(e.target.value)}
+                            className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
+                              testErrors.resultValue
+                                ? "border-red-500"
+                                : "border-gray-300"
+                            }`}
+                          >
+                            <option value="">Select result</option>
+                            {TEST_DROPDOWN_OPTIONS[selectedTest].map(
+                              (option) => (
+                                <option key={option} value={option}>
+                                  {option}
+                                </option>
+                              ),
+                            )}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            value={resultValue}
+                            onChange={(e) => setResultValue(e.target.value)}
+                            placeholder={
+                              TEST_PLACEHOLDER_HINTS[selectedTest] ||
+                              "Enter result value"
+                            }
+                            className={`flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
+                              testErrors.resultValue
+                                ? "border-red-500"
+                                : "border-gray-300"
+                            }`}
+                          />
+                        )}
+                        {currentTests.find((t) => t.name === selectedTest)
+                          ?.unit && (
+                          <span className="px-4 py-2 bg-gray-100 rounded-lg flex items-center text-gray-700 font-semibold">
+                            {
+                              currentTests.find((t) => t.name === selectedTest)
+                                ?.unit
+                            }
+                          </span>
+                        )}
+                      </div>
+                      {testErrors.resultValue && (
+                        <p className="text-red-500 text-sm mt-1">
+                          {testErrors.resultValue}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                {/* Reference Range - Show for tests without dropdown options */}
+                {selectedTest &&
+                  !TEST_DROPDOWN_OPTIONS[selectedTest] &&
+                  !CC_GROUPED_TEST_NAMES.includes(selectedTest) && (
+                    <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Reference Range
+                      </label>
+                      <p className="text-gray-700 text-sm">
+                        {
+                          currentTests.find((t) => t.name === selectedTest)
+                            ?.referenceRange
+                        }{" "}
+                        {currentTests.find((t) => t.name === selectedTest)
+                          ?.unit &&
+                          currentTests.find((t) => t.name === selectedTest)
+                            ?.unit}
+                      </p>
+                    </div>
+                  )}
               </form>
             </div>
 
@@ -2012,7 +3746,7 @@ export default function PatientsPage() {
                 disabled={testSubmitting}
                 className="px-6 py-2 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold disabled:opacity-50"
               >
-                {testSubmitting ? 'Saving...' : '✓ Save Test Result'}
+                {testSubmitting ? "Saving..." : "✓ Save Test Result"}
               </button>
             </div>
           </div>
