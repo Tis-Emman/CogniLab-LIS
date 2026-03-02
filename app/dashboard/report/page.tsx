@@ -79,7 +79,7 @@ const MEDTECH_LIST = [
   {
     id: "janna-javon",
     displayName: "Janna Lea Javon, RMT",
-    signatureFile: "janna-javon.png",
+    signatureFile: "janna-signature.png",
   },
   {
     id: "ryza-alvaran",
