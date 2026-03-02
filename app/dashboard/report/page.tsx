@@ -54,7 +54,7 @@ const MEDTECH_LIST = [
   {
     id: "mycah-hernandez",
     displayName: "Mycah Charrise M. Hernandez, RMT",
-    signatureFile: "mycah-hernandez.png",
+    signatureFile: "mycah-signature.png",
   },
   {
     id: "angel-gautane",
@@ -69,7 +69,7 @@ const MEDTECH_LIST = [
   {
     id: "ram-suarez",
     displayName: "Ram Jancel V. Suarez, RMT",
-    signatureFile: "ram-suarez.png",
+    signatureFile: "ram-jancel-signature.png",
   },
   {
     id: "xavier-bangit",
@@ -285,15 +285,13 @@ export default function PrintReportPage() {
                   {/* Pathologist — fixed, display only */}
                   <div className="p-3 rounded-lg bg-gray-50 border border-gray-200">
                     <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">
-                      Pathologist (Fixed)
+                      Pathologist
                     </p>
                     <p className="text-sm font-bold text-gray-800">
                       {PATHOLOGIST.displayName}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
-                      Signature file:{" "}
                       <code className="bg-gray-100 px-1 rounded">
-                        public/signatures/{PATHOLOGIST.signatureFile}
                       </code>
                     </p>
                   </div>
@@ -318,9 +316,9 @@ export default function PrintReportPage() {
                     </select>
                     {medtech1 && (
                       <p className="text-xs text-gray-400 mt-1">
-                        Signature file:{" "}
+
                         <code className="bg-gray-100 px-1 rounded">
-                          public/signatures/{medtech1.signatureFile}
+
                         </code>
                       </p>
                     )}
@@ -346,9 +344,7 @@ export default function PrintReportPage() {
                     </select>
                     {medtech2 && (
                       <p className="text-xs text-gray-400 mt-1">
-                        Signature file:{" "}
                         <code className="bg-gray-100 px-1 rounded">
-                          public/signatures/{medtech2.signatureFile}
                         </code>
                       </p>
                     )}

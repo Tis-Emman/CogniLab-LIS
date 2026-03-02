@@ -149,15 +149,15 @@ export default function UserManagementPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-[#3B6255]">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Total Users</h3>
-          <p className="text-3xl font-bold text-[#3B6255]">{users.length}/9</p>
+          <p className="text-3xl font-bold text-[#3B6255]">8</p>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-green-600">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Member Users</h3>
-          <p className="text-3xl font-bold text-green-600">{memberCount}/8</p>
+          <p className="text-3xl font-bold text-green-600">8</p>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-blue-600">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Faculty Users</h3>
-          <p className="text-3xl font-bold text-blue-600">{facultyCount}/1</p>
+          <p className="text-3xl font-bold text-blue-600">1</p>
         </div>
       </div>
 

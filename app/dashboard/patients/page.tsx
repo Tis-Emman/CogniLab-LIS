@@ -1046,123 +1046,58 @@ export default function PatientsPage() {
           unit: "seconds",
         });
       } else if (selectedTest === "Routine Urinalysis (UA)") {
-        // Submit each urinalysis component separately
-        const urinalysisComponents = [
+        const resultString = [
+          `Color: ${urinalysisValues.color}`,
+          `Transparency: ${urinalysisValues.transparency}`,
+          `pH: ${urinalysisValues.pH}`,
+          `Protein/Glucose: ${urinalysisValues.proteinGlucose}`,
+          `Bilirubin/Ketone: ${urinalysisValues.bilirubinKetone}`,
+          `Urobilinogen: ${urinalysisValues.urobilinogen} IEU/dL`,
+          `WBC (Microscopic): ${urinalysisValues.wbcMicroscopic} hpf`,
+          `RBC (Microscopic): ${urinalysisValues.rbcMicroscopic} hpf`,
+          `Bacteria/Casts/Crystals: ${urinalysisValues.bacteriaCastsCrystals}`,
+        ].join("\n");
+        await addTestResult(
           {
-            name: "UA Color",
-            value: urinalysisValues.color,
-            range: "Clear, Pale Yellow, Amber",
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: "Routine Urinalysis (UA)",
+            result_value: resultString,
+            reference_range: "",
             unit: "",
           },
-          {
-            name: "UA Transparency",
-            value: urinalysisValues.transparency,
-            range: "Clear",
-            unit: "",
-          },
-          {
-            name: "UA pH",
-            value: urinalysisValues.pH,
-            range: "4.5 - 8.0",
-            unit: "",
-          },
-          {
-            name: "UA Protein/Glucose",
-            value: urinalysisValues.proteinGlucose,
-            range: "Positive, Negative",
-            unit: "",
-          },
-          {
-            name: "UA Bilirubin/Ketone",
-            value: urinalysisValues.bilirubinKetone,
-            range: "Positive, Negative",
-            unit: "",
-          },
-          {
-            name: "UA Urobilinogen",
-            value: urinalysisValues.urobilinogen,
-            range: "0.2 - 1.0",
-            unit: "IEU/dL",
-          },
-          {
-            name: "UA WBC (Microscopic)",
-            value: urinalysisValues.wbcMicroscopic,
-            range: "0 - 5",
-            unit: "hpf",
-          },
-          {
-            name: "UA RBC (Microscopic)",
-            value: urinalysisValues.rbcMicroscopic,
-            range: "0 - 2",
-            unit: "hpf",
-          },
-          {
-            name: "UA Bacteria/Casts/Crystals",
-            value: urinalysisValues.bacteriaCastsCrystals,
-            range: "None, Rare, Few, Many",
-            unit: "",
-          },
-        ];
-
-        for (const component of urinalysisComponents) {
-          await addTestResult(
-            {
-              patient_name: newPatientName,
-              section: selectedSection,
-              test_name: component.name,
-              result_value: component.value,
-              reference_range: component.range,
-              unit: component.unit,
-            },
-            user,
-          );
-
-          savedTests.push(component);
-        }
+          user,
+        );
+        savedTests.push({
+          name: "Routine Urinalysis (UA)",
+          value: resultString,
+          range: "",
+          unit: "",
+        });
       } else if (selectedTest === "Culture and Sensitivity") {
-        // Submit each culture and sensitivity component separately
-        const cultureAndSensitivityComponents = [
+        const resultString = [
+          `Culture: ${cultureSensitivityValues.culture}`,
+          `Preliminary Report: ${cultureSensitivityValues.preliminaryReport}`,
+          `Final Report: ${cultureSensitivityValues.finalReport}`,
+          `Sensitivity: ${cultureSensitivityValues.sensitivity}`,
+        ].join("\n");
+        await addTestResult(
           {
-            name: "Culture",
-            value: cultureSensitivityValues.culture,
-            range: "Organism identification",
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: "Culture and Sensitivity",
+            result_value: resultString,
+            reference_range: "",
             unit: "",
           },
-          {
-            name: "Preliminary Report",
-            value: cultureSensitivityValues.preliminaryReport,
-            range: "Growth status after 24/48 hours",
-            unit: "",
-          },
-          {
-            name: "Final Report",
-            value: cultureSensitivityValues.finalReport,
-            range: "Final growth status after 5-7 days",
-            unit: "",
-          },
-          {
-            name: "Sensitivity (Antibiogram)",
-            value: cultureSensitivityValues.sensitivity,
-            range: "S (Susceptible), I (Intermediate), R (Resistant)",
-            unit: "",
-          },
-        ];
-
-        for (const component of cultureAndSensitivityComponents) {
-          await addTestResult(
-            {
-              patient_name: newPatientName,
-              section: selectedSection,
-              test_name: component.name,
-              result_value: component.value,
-              reference_range: component.range,
-              unit: component.unit,
-            },
-            user,
-          );
-
-          savedTests.push(component);
-        }
+          user,
+        );
+        savedTests.push({
+          name: "Culture and Sensitivity",
+          value: resultString,
+          range: "",
+          unit: "",
+        });
       } else if (selectedTest === "Lipid Profile") {
         const sub = LIPID_PROFILE_TESTS.find((t) => t.name === lipidSubTest)!;
         await addTestResult(
@@ -1240,106 +1175,57 @@ export default function PatientsPage() {
           unit: sub.unit,
         });
       } else if (selectedTest === "Electrolytes") {
-        const components = [
+        const resultString = [
+          `Sodium (Na+): ${electrolytesValues.sodium} mmol/L`,
+          `Potassium (K+): ${electrolytesValues.potassium} mmol/L`,
+          `Chloride (Cl-): ${electrolytesValues.chloride} mmol/L`,
+          `Bicarbonate: ${electrolytesValues.bicarbonate} mEq/L`,
+          `Calcium – Total (Ca++): ${electrolytesValues.calcium} mg/dL`,
+          `Phosphorus: ${electrolytesValues.phosphorus} mmol/L`,
+          `Magnesium (Mg++): ${electrolytesValues.magnesium} mmol/L`,
+        ].join("\n");
+        await addTestResult(
           {
-            name: "Sodium (Na+)",
-            value: electrolytesValues.sodium,
-            range: "135 - 145 mmol/L",
-            unit: "mmol/L",
-          },
-          {
-            name: "Potassium (K+)",
-            value: electrolytesValues.potassium,
-            range: "3.4 - 5.0 mmol/L",
-            unit: "mmol/L",
-          },
-          {
-            name: "Chloride (Cl-)",
-            value: electrolytesValues.chloride,
-            range: "9 - 11 mmol/L",
-            unit: "mmol/L",
-          },
-          {
-            name: "Bicarbonate",
-            value: electrolytesValues.bicarbonate,
-            range: "22 - 28 mEq/L",
-            unit: "mEq/L",
-          },
-          {
-            name: "Calcium – Total (Ca++)",
-            value: electrolytesValues.calcium,
-            range: "8.5 - 10.5 mg/dL",
-            unit: "mg/dL",
-          },
-          {
-            name: "Phosphorus",
-            value: electrolytesValues.phosphorus,
-            range: "3.0 - 4.5 mmol/L",
-            unit: "mmol/L",
-          },
-          {
-            name: "Magnesium (Mg++)",
-            value: electrolytesValues.magnesium,
-            range: "1.8 - 3 mmol/L",
-            unit: "mmol/L",
-          },
-        ];
-        for (const component of components) {
-          await addTestResult(
-            {
-              patient_name: newPatientName,
-              section: selectedSection,
-              test_name: component.name,
-              result_value: component.value,
-              reference_range: component.range,
-              unit: component.unit,
-            },
-            user,
-          );
-          savedTests.push(component);
-        }
-      } else if (selectedTest === "Arterial Blood Gas") {
-        const components = [
-          {
-            name: "ABG pH",
-            value: abgValues.pH,
-            range: "7.35 - 7.45",
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: "Electrolytes",
+            result_value: resultString,
+            reference_range: "",
             unit: "",
           },
+          user,
+        );
+        savedTests.push({
+          name: "Electrolytes",
+          value: resultString,
+          range: "",
+          unit: "",
+        });
+      } else if (selectedTest === "Arterial Blood Gas") {
+        const resultString = [
+          `pH: ${abgValues.pH}`,
+          `pCO2: ${abgValues.pco2} mmHg`,
+          `PO2: ${abgValues.po2} mmHg`,
+          `SaO2: ${abgValues.sao2} %`,
+          `HCO3-: ${abgValues.hco3} mEq/L`,
+        ].join("\n");
+        await addTestResult(
           {
-            name: "pCO2",
-            value: abgValues.pco2,
-            range: "35 - 45 mmHg",
-            unit: "mmHg",
+            patient_name: newPatientName,
+            section: selectedSection,
+            test_name: "Arterial Blood Gas",
+            result_value: resultString,
+            reference_range: "",
+            unit: "",
           },
-          {
-            name: "PO2",
-            value: abgValues.po2,
-            range: "80 - 100 mmHg",
-            unit: "mmHg",
-          },
-          { name: "SaO2", value: abgValues.sao2, range: "> 90%", unit: "%" },
-          {
-            name: "HCO3-",
-            value: abgValues.hco3,
-            range: "22 - 26 mEq/L",
-            unit: "mEq/L",
-          },
-        ];
-        for (const component of components) {
-          await addTestResult(
-            {
-              patient_name: newPatientName,
-              section: selectedSection,
-              test_name: component.name,
-              result_value: component.value,
-              reference_range: component.range,
-              unit: component.unit,
-            },
-            user,
-          );
-          savedTests.push(component);
-        }
+          user,
+        );
+        savedTests.push({
+          name: "Arterial Blood Gas",
+          value: resultString,
+          range: "",
+          unit: "",
+        });
       } else {
         await addTestResult(
           {

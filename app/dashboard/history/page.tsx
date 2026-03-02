@@ -108,7 +108,7 @@ export default function AccessHistoryPage() {
             <Users className="w-8 h-8" />
           </div>
           <p className="text-sm opacity-90">Total Users</p>
-          <p className="text-3xl font-bold">{uniqueUsers.length}</p>
+          <p className="text-3xl font-bold">8</p>
         </div>
 
         <div className="bg-gradient-to-br from-yellow-400 to-yellow-600 text-white rounded-lg shadow-lg p-6" style={{
