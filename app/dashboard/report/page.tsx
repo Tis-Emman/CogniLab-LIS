@@ -74,7 +74,7 @@ const MEDTECH_LIST = [
   {
     id: "xavier-bangit",
     displayName: "Xavier Beirut L. Bangit, RMT",
-    signatureFile: "xavier-bangit.png",
+    signatureFile: "xavier-signature.png",
   },
   {
     id: "janna-javon",

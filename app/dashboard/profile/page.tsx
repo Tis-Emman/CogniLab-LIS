@@ -35,7 +35,7 @@ export default function ProfilePage() {
     credentials: user?.role === 'faculty' ? ['RMT', 'RMT'] : ['RMT'],
     certifications: user?.role === 'faculty' 
       ? ['Clinical Pathology Specialist', 'ISO 15189 Quality Manager']
-      : [`Certified in ${user?.department || 'Laboratory Science'}`],
+      : [],
     joinDate: (user as any)?.join_date || new Date().toISOString().split('T')[0],
     address: 'Lot 5, Block 2, Medical Complex',
     city: 'Manila',
@@ -58,7 +58,7 @@ export default function ProfilePage() {
         credentials: user.role === 'faculty' ? ['RMT'] : ['RMT'],
         certifications: user.role === 'faculty'
           ? ['Clinical Pathology Specialist', 'ISO 15189 Quality Manager']
-          : [`Certified in ${user.department}`],
+          : [],
         joinDate: (user as any).join_date || new Date().toISOString().split('T')[0],
         address: 'Lot 5, Block 2, Medical Complex',
         city: 'Manila',
@@ -188,18 +188,7 @@ export default function ProfilePage() {
                 profile.role
               )}
             </p>
-            <p className="text-gray-600">
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editData.department}
-                  onChange={(e) => handleInputChange('department', e.target.value)}
-                  className="w-full px-3 py-1 border border-gray-300 rounded-lg text-gray-800"
-                />
-              ) : (
-                profile.department
-              )}
-            </p>
+
           </div>
         </div>
 
@@ -312,17 +301,19 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <div>
-              <label className="text-sm font-semibold text-gray-700 mb-3 block">Certifications</label>
-              <div className="space-y-2">
-                {profile.certifications.map((cert, idx) => (
-                  <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                    <Award className="w-5 h-5 text-[#3B6255]" />
-                    <span className="text-gray-800">{cert}</span>
-                  </div>
-                ))}
+            {profile.certifications.length > 0 && (
+              <div>
+                <label className="text-sm font-semibold text-gray-700 mb-3 block">Certifications</label>
+                <div className="space-y-2">
+                  {profile.certifications.map((cert, idx) => (
+                    <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <Award className="w-5 h-5 text-[#3B6255]" />
+                      <span className="text-gray-800">{cert}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
