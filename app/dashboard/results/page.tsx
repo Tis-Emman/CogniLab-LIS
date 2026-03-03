@@ -418,6 +418,51 @@ const INITIAL_ELECTROLYTES = {
 // Helper: initial ABG state
 const INITIAL_ABG = { pH: "", pco2: "", po2: "", sao2: "", hco3: "" };
 
+const SUBLINE_RANGES: Record<string, { min?: number; max?: number }> = {
+  Neutrophils: { min: 45, max: 75 },
+  Lymphocytes: { min: 16, max: 46 },
+  Monocytes: { min: 4, max: 11 },
+  Eosinophils: { min: 0, max: 8 },
+  Basophils: { min: 0, max: 3 },
+  MCV: { min: 80, max: 100 },
+  MCH: { min: 27, max: 31 },
+  RDW: { min: 11.5, max: 14.5 },
+  PT: { min: 11.0, max: 13.5 },
+  INR: { min: 0.8, max: 1.2 },
+  aPTT: { min: 25.0, max: 35.0 },
+  "pH (Urine)": { min: 4.5, max: 8.0 },
+  pCO2: { min: 35, max: 45 },
+  PO2: { min: 80, max: 100 },
+  SaO2: { min: 90 },
+  "HCO3-": { min: 22, max: 26 },
+  "Sodium (Na+)": { min: 135, max: 145 },
+  "Potassium (K+)": { min: 3.4, max: 5.0 },
+  "Chloride (Cl-)": { min: 95, max: 108 },
+  Bicarbonate: { min: 20, max: 32 },
+  "Calcium – Total (Ca++)": { min: 8.5, max: 10.5 },
+  Phosphorus: { min: 3.0, max: 4.5 },
+  "Magnesium (Mg++)": { min: 1.8, max: 3.0 },
+  "WBC (Microscopic)": { min: 0, max: 5 },
+  "RBC (Microscopic)": { min: 0, max: 2 },
+  Urobilinogen: { min: 0.2, max: 1.0 },
+};
+
+const ALERT_SUBLINE_RANGES: Record<
+  string,
+  { alertLow?: number; alertHigh?: number }
+> = {
+  Neutrophils: { alertLow: 20, alertHigh: 90 },
+  pH: { alertLow: 7.2, alertHigh: 7.6 },
+  pCO2: { alertLow: 20, alertHigh: 70 },
+  PO2: { alertLow: 40 },
+  PT: { alertHigh: 30 },
+  INR: { alertHigh: 4.0 },
+  aPTT: { alertHigh: 70 },
+  "Potassium (K+)": { alertLow: 2.5, alertHigh: 6.5 },
+  "Sodium (Na+)": { alertLow: 120, alertHigh: 160 },
+  "Calcium – Total (Ca++)": { alertLow: 6.5, alertHigh: 13.0 },
+};
+
 // Multi-line result test names
 const MULTI_LINE_TESTS = [
   "CBC",
@@ -427,6 +472,22 @@ const MULTI_LINE_TESTS = [
   "Electrolytes",
   "Arterial Blood Gas",
 ];
+
+function abnormalColor(status: string | null): string {
+  if (status === "alert-high") return "text-red-700 font-extrabold";
+  if (status === "high") return "text-red-500 font-bold";
+  if (status === "alert-low") return "text-blue-700 font-extrabold";
+  if (status === "low") return "text-blue-500 font-bold";
+  return "text-gray-700";
+}
+
+function abnormalArrow(status: string | null): string {
+  if (status === "alert-high") return "↑↑";
+  if (status === "high") return "↑";
+  if (status === "alert-low") return "↓↓";
+  if (status === "low") return "↓";
+  return "";
+}
 
 export default function TestResultsPage() {
   const { user } = useAuth();
@@ -571,11 +632,15 @@ export default function TestResultsPage() {
   };
 
   const getAbnormalIndicator = (status: string | undefined) => {
+    if (status === "alert-high")
+      return { symbol: "↑↑", color: "text-red-700", label: "CRITICAL HIGH" };
     if (status === "high")
-      return { symbol: "↑", color: "text-red-600", label: "HIGH" };
+      return { symbol: "↑", color: "text-red-500", label: "HIGH" };
+    if (status === "alert-low")
+      return { symbol: "↓↓", color: "text-blue-700", label: "CRITICAL LOW" };
     if (status === "low")
-      return { symbol: "↓", color: "text-blue-600", label: "LOW" };
-    return { symbol: "✓", color: "text-green-600", label: "NORMAL" };
+      return { symbol: "↓", color: "text-blue-500", label: "LOW" };
+    return { symbol: "", color: "text-green-600", label: "NORMAL" };
   };
 
   const handlePrint = (result: TestResult) => {
@@ -927,12 +992,12 @@ export default function TestResultsPage() {
           ? await updateTestResult(editingId, payload, user)
           : await addTestResult(payload, user);
 
-      // ── FIXED: Routine Urinalysis — single record ─────────────────────────
+        // ── FIXED: Routine Urinalysis — single record ─────────────────────────
       } else if (selectedTest === "Routine Urinalysis (UA)") {
         const resultString = [
           `Color: ${urinalysisValues.color}`,
           `Transparency: ${urinalysisValues.transparency}`,
-          `pH: ${urinalysisValues.pH}`,
+          `pH (Urine): ${urinalysisValues.pH}`,
           `Protein/Glucose: ${urinalysisValues.proteinGlucose}`,
           `Bilirubin/Ketone: ${urinalysisValues.bilirubinKetone}`,
           `Urobilinogen: ${urinalysisValues.urobilinogen} IEU/dL`,
@@ -952,7 +1017,7 @@ export default function TestResultsPage() {
           ? await updateTestResult(editingId, payload, user)
           : await addTestResult(payload, user);
 
-      // ── FIXED: Culture and Sensitivity — single record ────────────────────
+        // ── FIXED: Culture and Sensitivity — single record ────────────────────
       } else if (selectedTest === "Culture and Sensitivity") {
         const resultString = [
           `Culture: ${cultureSensitivityValues.culture}`,
@@ -1211,7 +1276,7 @@ export default function TestResultsPage() {
       setUrinalysisValues({
         color: kv["Color"] || "",
         transparency: kv["Transparency"] || "",
-        pH: kv["pH"] || "",
+        pH: kv["pH (Urine)"] || kv["pH"] || "",
         proteinGlucose: kv["Protein/Glucose"] || "",
         bilirubinKetone: kv["Bilirubin/Ketone"] || "",
         urobilinogen: num(kv["Urobilinogen"]),
@@ -2633,22 +2698,64 @@ export default function TestResultsPage() {
                         {result.test_name}
                       </td>
                       <td className="py-4 px-8 font-bold text-[#3B6255]">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={
-                              MULTI_LINE_TESTS.includes(result.test_name)
-                                ? "whitespace-pre-line"
-                                : ""
-                            }
-                          >
-                            {result.result_value} {result.unit}
-                          </span>
-                          <span
-                            className={`${indicator.color} font-bold text-lg`}
-                          >
-                            {indicator.symbol}
-                          </span>
-                        </div>
+                        {MULTI_LINE_TESTS.includes(result.test_name) ? (
+                          <div className="text-sm space-y-0.5">
+                            {result.result_value.split("\n").map((line, i) => {
+                              const [label, ...rest] = line.split(":");
+                              const val = rest.join(":").trim();
+                              const num = parseFloat(val);
+                              const ref = SUBLINE_RANGES[label.trim()];
+                              const alert = ALERT_SUBLINE_RANGES[label.trim()];
+                              let status: string | null = null;
+                              if (ref && !isNaN(num)) {
+                                if (
+                                  alert?.alertLow !== undefined &&
+                                  num < alert.alertLow
+                                )
+                                  status = "alert-low";
+                                else if (
+                                  alert?.alertHigh !== undefined &&
+                                  num > alert.alertHigh
+                                )
+                                  status = "alert-high";
+                                else if (ref.min !== undefined && num < ref.min)
+                                  status = "low";
+                                else if (ref.max !== undefined && num > ref.max)
+                                  status = "high";
+                                else status = "normal";
+                              }
+                              return (
+                                <div
+                                  key={i}
+                                  className={`flex items-center gap-1 ${abnormalColor(status)}`}
+                                >
+                                  <span className="text-gray-500">
+                                    {label}:
+                                  </span>
+                                  <span>{val}</span>
+                                  {abnormalArrow(status) && (
+                                    <span className="text-xs font-black">
+                                      {abnormalArrow(status)}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1">
+                            <span className={abnormalColor(abnormal)}>
+                              {result.result_value} {result.unit}
+                            </span>
+                            {abnormalArrow(abnormal) && (
+                              <span
+                                className={`text-sm font-black ${abnormalColor(abnormal)}`}
+                              >
+                                {abnormalArrow(abnormal)}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="py-4 px-8 relative">
                         <button

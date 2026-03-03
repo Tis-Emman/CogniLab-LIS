@@ -3,7 +3,161 @@ import { MOCK_USERS, MOCK_PATIENTS, MOCK_TEST_RESULTS, MOCK_BILLING, MOCK_AUDIT_
 
 const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ABNORMAL STATUS LOGIC
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type AbnormalStatus = "normal" | "low" | "high" | "alert-low" | "alert-high";
+
+// Flat reference ranges for all tests (single numeric value)
+const FLAT_RANGES: Record<string, { min?: number; max?: number }> = {
+  // HEMATOLOGY
+  Neutrophils:             { min: 45,   max: 75 },
+  Lymphocytes:             { min: 16,   max: 46 },
+  Monocytes:               { min: 4,    max: 11 },
+  Eosinophils:             { min: 0,    max: 8 },
+  Basophils:               { min: 0,    max: 3 },
+  "WBC Count":             { min: 5.0,  max: 10.0 },
+  MCV:                     { min: 80,   max: 100 },
+  MCH:                     { min: 27,   max: 31 },
+  RDW:                     { min: 11.5, max: 14.5 },
+  "Hemoglobin (Male)":     { min: 14.0, max: 17.0 },
+  "Hemoglobin (Female)":   { min: 12.0, max: 15.0 },
+  "Hematocrit (Male)":     { min: 40,   max: 54 },
+  "Hematocrit (Female)":   { min: 37,   max: 47 },
+  "Platelet Count":        { min: 150,  max: 450 },
+  PT:                      { min: 11.0, max: 13.5 },
+  INR:                     { min: 0.8,  max: 1.2 },
+  aPTT:                    { min: 25.0, max: 35.0 },
+  "ESR (Male)":            { min: 0,    max: 15 },
+  "ESR (Female)":          { min: 0,    max: 15 },
+  ESR:                     { min: 0,    max: 15 },
+  // IMMUNOLOGY/SEROLOGY
+  "HBsAg (Hepa B Surface Ag) - Quantitative": { max: 1.0 },
+  "Anti-HBs (Quantitative)":                  { min: 10 },
+  "Anti-HCV (Quantitative)":                  { max: 1.0 },
+  "Anti-HIV 1 & 2 (Quantitative)":            { max: 1.0 },
+  "Anti-Streptolysin O (ASO) - Adult":        { max: 200 },
+  "Anti-Streptolysin O (ASO) - Child":        { max: 150 },
+  C3:                                          { min: 80,   max: 160 },
+  "C-Reactive Protein (CRP)":                 { min: 0,    max: 10 },
+  "Rheumatoid Factor (RF)":                   { max: 14 },
+  // CLINICAL CHEMISTRY - Glucose
+  "Random Blood Sugar (RBS)":                 { max: 140 },
+  "Fasting Blood Sugar (FBS)":                { min: 70,   max: 110 },
+  "Oral Glucose Tolerance Test (OGTT) 100g":  { max: 140 },
+  "Oral Glucose Tolerance Test (OGTT) 75g":   { max: 140 },
+  "Oral Glucose Challenge Test (OGCT) 50g":   { max: 140 },
+  "Hemoglobin A1c (HBA1c)":                   { max: 5.7 },
+  // CLINICAL CHEMISTRY - Lipid
+  "Total Cholesterol":                        { max: 200 },
+  Triglycerides:                              { min: 40,   max: 150 },
+  HDL:                                        { min: 60 },
+  LDL:                                        { max: 100 },
+  // CLINICAL CHEMISTRY - Electrolytes
+  "Sodium (Na+)":                             { min: 135,  max: 145 },
+  "Potassium (K+)":                           { min: 3.4,  max: 5.0 },
+  "Chloride (Cl-)":                           { min: 95,   max: 108 },
+  Bicarbonate:                                { min: 22,   max: 28 },
+  "Calcium – Total (Ca++)":                   { min: 8.5,  max: 10.5 },
+  Phosphorus:                                 { min: 3.0,  max: 4.5 },
+  "Magnesium (Mg++)":                         { min: 1.8,  max: 3.0 },
+  // CLINICAL CHEMISTRY - LFT
+  "Total Bilirubin":                          { min: 0.0,  max: 1.0 },
+  "Direct Bilirubin":                         { min: 0.0,  max: 0.4 },
+  "Indirect Bilirubin":                       { min: 0.2,  max: 0.8 },
+  "SGOT / AST (Female)":                      { min: 9,    max: 25 },
+  "SGOT / AST (Male)":                        { min: 10,   max: 40 },
+  "SGPT / ALT (Female)":                      { min: 7,    max: 30 },
+  "SGPT / ALT (Male)":                        { min: 10,   max: 55 },
+  "Total Protein":                            { min: 6.4,  max: 8.3 },
+  "Albumin (Adults)":                         { min: 3.5,  max: 5.0 },
+  "Albumin (Children)":                       { min: 3.4,  max: 4.2 },
+  "Alkaline Phosphatase ALP (Female)":        { min: 30,   max: 100 },
+  "Alkaline Phosphatase ALP (Male)":          { min: 45,   max: 115 },
+  // CLINICAL CHEMISTRY - RFT
+  "Blood Urea Nitrogen (BUN)":                { min: 8,    max: 23 },
+  "Blood Uric Acid (BUA)":                    { min: 4,    max: 8 },
+  "Creatinine (Male)":                        { min: 0.7,  max: 1.3 },
+  "Creatinine (Female)":                      { min: 0.6,  max: 1.1 },
+  // CLINICAL CHEMISTRY - Others
+  Ammonia:                                    { min: 15,   max: 45 },
+  Amylase:                                    { min: 53,   max: 123 },
+  Lipase:                                     { min: 31,   max: 186 },
+  "CK (Female)":                              { min: 40,   max: 150 },
+  "CK (Male)":                                { min: 60,   max: 400 },
+  "CK-MB":                                    { max: 5 },
+  "Lactate Dehydrogenase (LDH)":              { max: 270 },
+  "Lactic Acid":                              { min: 0.5,  max: 2.2 },
+  "Serum Osmolality":                         { min: 275,  max: 295 },
+  Prealbumin:                                 { min: 19.5, max: 35.8 },
+  "Troponin I":                               { min: 0,    max: 0.4 },
+  "Troponin T":                               { min: 0,    max: 0.01 },
+  "Testosterone (Male)":                      { min: 270,  max: 1070 },
+  "Testosterone (Female)":                    { min: 6,    max: 86 },
+  Folate:                                     { min: 3.1,  max: 17.5 },
+  // ABG (also used as sub-line labels in multiline)
+  pH:                                         { min: 7.35, max: 7.45 },
+  pCO2:                                       { min: 35,   max: 45 },
+  PO2:                                        { min: 80,   max: 100 },
+  SaO2:                                       { min: 90 },
+  "HCO3-":                                    { min: 22,   max: 26 },
+  // UA sub-lines
+  "WBC (Microscopic)":                        { min: 0,    max: 5 },
+  "RBC (Microscopic)":                        { min: 0,    max: 2 },
+  Urobilinogen:                               { min: 0.2,  max: 1.0 },
+};
+
+// Critical / panic value bands — outside these = alert (↑↑ or ↓↓)
+const ALERT_RANGES: Record<string, { alertLow?: number; alertHigh?: number }> = {
+  "Hemoglobin (Male)":          { alertLow: 7.0,  alertHigh: 20.0 },
+  "Hemoglobin (Female)":        { alertLow: 7.0,  alertHigh: 20.0 },
+  "Platelet Count":             { alertLow: 50,   alertHigh: 1000 },
+  "WBC Count":                  { alertLow: 2.0,  alertHigh: 30.0 },
+  Neutrophils:                  { alertLow: 20,   alertHigh: 90 },
+  "Fasting Blood Sugar (FBS)":  { alertLow: 50,   alertHigh: 400 },
+  "Random Blood Sugar (RBS)":   { alertLow: 50,   alertHigh: 400 },
+  "Potassium (K+)":             { alertLow: 2.5,  alertHigh: 6.5 },
+  "Sodium (Na+)":               { alertLow: 120,  alertHigh: 160 },
+  "Calcium – Total (Ca++)":     { alertLow: 6.5,  alertHigh: 13.0 },
+  "Troponin I":                 { alertHigh: 2.0 },
+  "Troponin T":                 { alertHigh: 0.1 },
+  pH:                           { alertLow: 7.20, alertHigh: 7.60 },
+  pCO2:                         { alertLow: 20,   alertHigh: 70 },
+  PO2:                          { alertLow: 40 },
+  PT:                           { alertHigh: 30 },
+  INR:                          { alertHigh: 4.0 },
+  aPTT:                         { alertHigh: 70 },
+};
+
+export function getAbnormalStatus(
+  resultValue: string,
+  testName: string,
+  section: string,
+): AbnormalStatus {
+  if (!resultValue || !testName) return "normal";
+
+  const numVal = parseFloat(resultValue);
+  if (isNaN(numVal)) return "normal";
+
+  const range = FLAT_RANGES[testName];
+  if (!range) return "normal";
+
+  const alert = ALERT_RANGES[testName];
+  const { min, max } = range;
+
+  if (alert?.alertLow  !== undefined && numVal < alert.alertLow)  return "alert-low";
+  if (alert?.alertHigh !== undefined && numVal > alert.alertHigh) return "alert-high";
+  if (min !== undefined && numVal < min) return "low";
+  if (max !== undefined && numVal > max) return "high";
+
+  return "normal";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // USERS QUERIES
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const fetchUsers = async () => {
   if (USE_MOCK_DATA) {
     console.log('📦 Using MOCK data for users');
@@ -77,7 +231,10 @@ export const deleteUser = async (id: string) => {
   return true;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
 // PATIENTS QUERIES
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const fetchPatients = async () => {
   if (USE_MOCK_DATA) {
     console.log('📦 Using MOCK data for patients');
@@ -98,7 +255,6 @@ export const fetchPatients = async () => {
 
 export const addPatient = async (patient: any, currentUser?: any) => {
   if (USE_MOCK_DATA) {
-    // Generate a unique ID for the new patient
     const newPatient = {
       id: `pat-${Date.now()}`,
       ...patient,
@@ -106,12 +262,7 @@ export const addPatient = async (patient: any, currentUser?: any) => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    // Add to mock data (in-memory)
     MOCK_PATIENTS.push(newPatient);
-    
-    // Create billing record for patient registration
-
-    // Log the action
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
@@ -121,7 +272,6 @@ export const addPatient = async (patient: any, currentUser?: any) => {
       resource_type: 'Patient',
       description: `Created new patient record: ${patient.first_name} ${patient.last_name} (Patient ID: ${patient.patient_id_no})`,
     });
-    
     return newPatient;
   }
 
@@ -135,9 +285,7 @@ export const addPatient = async (patient: any, currentUser?: any) => {
     return null;
   }
 
-  // Create billing record for patient registration
-    if (data?.[0]) {
-    // Log the action
+  if (data?.[0]) {
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
@@ -193,7 +341,6 @@ export const deletePatient = async (id: string) => {
     if (index !== -1) {
       const deletedPatient = MOCK_PATIENTS[index];
       MOCK_PATIENTS.splice(index, 1);
-      
       await logActivity({
         user_name: 'Current User',
         encryption_key: 'ENC_KEY_TEMP',
@@ -202,13 +349,11 @@ export const deletePatient = async (id: string) => {
         resource_type: 'Patient',
         description: `Deleted patient record: ${deletedPatient.first_name} ${deletedPatient.last_name} (Patient ID: ${deletedPatient.patient_id_no})`,
       });
-      
       return true;
     }
     return false;
   }
 
-  // Get patient data before deletion for logging
   const { data: patientData } = await supabase
     .from('patients')
     .select('patient_id_no, first_name, last_name')
@@ -239,7 +384,10 @@ export const deletePatient = async (id: string) => {
   return true;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
 // TEST RESULTS QUERIES
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const fetchTestResults = async () => {
   if (USE_MOCK_DATA) {
     console.log('📦 Using MOCK data for test results');
@@ -258,11 +406,10 @@ export const fetchTestResults = async () => {
   return data || [];
 };
 
-// Tests whose components are billed as a single parent test (e.g. CBC components → one CBC billing)
 const BILLING_PARENT_TESTS: Record<string, string[]> = {
-  HEMATOLOGY: ['Neutrophils', 'Lymphocytes', 'Monocytes', 'Eosinophils', 'Basophils'], // CBC components
-  'CLINICAL MICROSCOPY': ['UA Color', 'UA Transparency', 'UA pH', 'UA Protein/Glucose', 'UA Bilirubin/Ketone', 'UA Urobilinogen', 'UA WBC (Microscopic)', 'UA RBC (Microscopic)', 'UA Bacteria/Casts/Crystals'], // Routine Urinalysis
-  MICROBIOLOGY: ['Culture', 'Preliminary Report', 'Final Report', 'Sensitivity (Antibiogram)'], // Culture and Sensitivity
+  HEMATOLOGY: ['Neutrophils', 'Lymphocytes', 'Monocytes', 'Eosinophils', 'Basophils'],
+  'CLINICAL MICROSCOPY': ['UA Color', 'UA Transparency', 'UA pH', 'UA Protein/Glucose', 'UA Bilirubin/Ketone', 'UA Urobilinogen', 'UA WBC (Microscopic)', 'UA RBC (Microscopic)', 'UA Bacteria/Casts/Crystals'],
+  MICROBIOLOGY: ['Culture', 'Preliminary Report', 'Final Report', 'Sensitivity (Antibiogram)'],
 };
 const BILLING_PARENT_NAMES: Record<string, string> = {
   HEMATOLOGY: 'CBC',
@@ -282,7 +429,6 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
     };
     MOCK_TEST_RESULTS.push(newResult);
 
-    // Skip billing for component tests - caller will add single parent billing
     const isComponent = BILLING_PARENT_TESTS[result.section]?.includes(result.test_name);
     if (skipBilling || isComponent) {
       await logActivity({
@@ -297,7 +443,6 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
       return newResult;
     }
 
-    // Automatically create billing entry for the test
     const testCost = TEST_PRICING[result.section]?.[result.test_name] || 300;
     const billingEntry = {
       id: `billing-${Date.now()}`,
@@ -313,7 +458,6 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
     };
     MOCK_BILLING.push(billingEntry);
 
-    // Log the action
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
@@ -338,7 +482,6 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
   }
 
   if (data?.[0]) {
-    // Log the action
     const testCost = TEST_PRICING[result.section]?.[result.test_name] || 300;
     await logActivity({
       user_id: currentUser?.id,
@@ -361,7 +504,6 @@ export const updateTestResult = async (id: string, result: any, currentUser?: an
       const oldStatus = MOCK_TEST_RESULTS[index].status;
       MOCK_TEST_RESULTS[index] = { ...MOCK_TEST_RESULTS[index], ...result, updated_at: new Date().toISOString() };
       
-      // Log status change if it occurred
       if (result.status && result.status !== oldStatus) {
         await logActivity({
           user_id: currentUser?.id,
@@ -396,7 +538,6 @@ export const updateTestResult = async (id: string, result: any, currentUser?: an
     return null;
   }
 
-  // Log status change if it occurred
   if (data?.[0] && result.status && result.status !== oldData?.status) {
     await logActivity({
       user_id: currentUser?.id,
@@ -434,7 +575,10 @@ export const deleteTestResult = async (id: string) => {
   return true;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
 // BILLING QUERIES
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const fetchBilling = async () => {
   if (USE_MOCK_DATA) {
     console.log('📦 Using MOCK data for billing');
@@ -504,8 +648,6 @@ export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid',
     if (index !== -1) {
       const oldStatus = MOCK_BILLING[index].status;
       MOCK_BILLING[index] = { ...MOCK_BILLING[index], status, updated_at: new Date().toISOString() };
-      
-      // Log the action
       await logActivity({
         user_id: currentUser?.id,
         user_name: currentUser?.full_name || 'Unknown User',
@@ -515,7 +657,6 @@ export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid',
         resource_type: 'Billing',
         description: `Updated billing status: ${oldStatus.toUpperCase()} → ${status.toUpperCase()} for ${MOCK_BILLING[index].test_name}. Amount: ₱${MOCK_BILLING[index].amount.toFixed(2)}`,
       });
-      
       return MOCK_BILLING[index];
     }
     return null;
@@ -538,7 +679,6 @@ export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid',
     return null;
   }
 
-  // Log the action
   if (data?.[0]) {
     await logActivity({
       user_id: currentUser?.id,
@@ -576,7 +716,10 @@ export const deleteBilling = async (id: string) => {
   return true;
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
 // AUDIT LOGS QUERIES
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const fetchAuditLogs = async () => {
   if (USE_MOCK_DATA) {
     console.log('📦 Using MOCK data for audit logs');
@@ -625,10 +768,7 @@ export const logActivity = async (log: {
 
     const { error } = await supabase
       .from('audit_logs')
-      .insert([{
-        ...log,
-        ip_address: log.ip_address || ''
-      }]);
+      .insert([{ ...log, ip_address: log.ip_address || '' }]);
     
     if (error) {
       console.error('Error logging activity:', error);
@@ -641,59 +781,33 @@ export const logActivity = async (log: {
   }
 };
 
-// REAL-TIME SUBSCRIPTION FOR AUDIT LOGS
 export const subscribeToAuditLogs = (callback: (log: any) => void) => {
   const channel = supabase
     .channel('audit_logs_channel')
     .on(
       'postgres_changes',
-      {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'audit_logs',
-      },
-      (payload) => {
-        callback(payload.new);
-      }
+      { event: 'INSERT', schema: 'public', table: 'audit_logs' },
+      (payload) => { callback(payload.new); }
     )
     .subscribe();
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
+  return () => { supabase.removeChannel(channel); };
 };
 
-// UTILITY FUNCTIONS FOR RESULTS
-export const getAbnormalStatus = (value: string | number, testName: string, section: string): 'normal' | 'high' | 'low' => {
-  const ranges = TEST_REFERENCE_RANGES[section]?.[testName];
-  if (!ranges) return 'normal';
-
-  // If it's a normal text value (Negative, Positive, etc.)
-  if (typeof value === 'string' && (value.toLowerCase() === 'negative' || value.toLowerCase() === 'no growth' || value === 'Compatible')) {
-    return 'normal';
-  }
-
-  const numValue = Number(value);
-  if (isNaN(numValue)) return 'normal';
-
-  // Check against min/max
-  if (ranges.min !== undefined && numValue < ranges.min) return 'low';
-  if (ranges.max !== undefined && numValue > ranges.max) return 'high';
-  
-  return 'normal';
-};
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
 
 export const getTestPrice = (testName: string, section: string): number | null => {
   return TEST_PRICING[section]?.[testName] || null;
 };
 
 export const enrichTestResultWithBilling = (result: any, billings: any[] = []) => {
-  // CBC/components: use parent test for pricing and billing lookup
   const isComponent = BILLING_PARENT_TESTS[result.section]?.includes(result.test_name);
   const billingTestName = isComponent ? (BILLING_PARENT_NAMES[result.section] || result.test_name) : result.test_name;
   const price = getTestPrice(billingTestName, result.section);
-  const billing = billings.find(b => 
-    b.test_name === billingTestName && 
+  const billing = billings.find(b =>
+    b.test_name === billingTestName &&
     b.patient_name === result.patient_name
   );
   const abnormal = getAbnormalStatus(result.result_value, result.test_name, result.section);
@@ -705,4 +819,3 @@ export const enrichTestResultWithBilling = (result: any, billings: any[] = []) =
     abnormal,
   };
 };
-

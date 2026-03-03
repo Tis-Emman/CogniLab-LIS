@@ -412,7 +412,7 @@ export const TEST_REFERENCE_RANGES: Record<string, Record<string, { min?: number
     'Urine Sodium (24hr)': { min: 40, max: 220, unit: 'mEq/L' },
     'Urine Potassium (Random)': { min: 20, unit: 'mEq/L' },
     'Urine Potassium (24hr)': { min: 25, max: 125, unit: 'mEq/day' },
-    'Arterial pH': { min: 7.35, max: 7.45, unit: '' },
+    'Arterial pH': { min: 4.5, max: 8.0 , unit: '' },
     'Arterial PCO2': { min: 35, max: 45, unit: 'mm Hg' },
     'Arterial PO2': { min: 80, max: 100, unit: 'mm Hg' },
     'Arterial SaO2': { min: 90, unit: '%' },

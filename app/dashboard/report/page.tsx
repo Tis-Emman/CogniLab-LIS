@@ -18,6 +18,94 @@ const DROPDOWN_TESTS = [
 const shouldShowReferenceRange = (testName: string): boolean =>
   !DROPDOWN_TESTS.includes(testName);
 
+// ── Abnormal status helper ────────────────────────────────────────────────────
+function getAbnormalStatus(
+  resultValue: string,
+  referenceRange: string
+): "high" | "low" | "normal" | null {
+  const num = parseFloat(resultValue);
+  if (isNaN(num) || !referenceRange) return null;
+
+  // e.g. "135 - 145", "3.4-5.0", "< 200", "> 60", "≤ 5.7", "≥ 10"
+  const ltMatch = referenceRange.match(/^[<≤]\s*([\d.]+)/);
+  const gtMatch = referenceRange.match(/^[>≥]\s*([\d.]+)/);
+  const rangeMatch = referenceRange.match(/([\d.]+)\s*[-–]\s*([\d.]+)/);
+
+  if (ltMatch) {
+    const max = parseFloat(ltMatch[1]);
+    return num > max ? "high" : "normal";
+  }
+  if (gtMatch) {
+    const min = parseFloat(gtMatch[1]);
+    return num < min ? "low" : "normal";
+  }
+  if (rangeMatch) {
+    const min = parseFloat(rangeMatch[1]);
+    const max = parseFloat(rangeMatch[2]);
+    if (num < min) return "low";
+    if (num > max) return "high";
+    return "normal";
+  }
+  return null;
+}
+
+// ── Abnormal indicator renderer ───────────────────────────────────────────────
+function AbnormalIndicator({ status, forPrint = false }: { status: "high" | "low" | "normal" | null; forPrint?: boolean }) {
+  if (!status || status === "normal") return null;
+  const isHigh = status === "high";
+  const color = isHigh ? "#dc2626" : "#2563eb";
+  const symbol = isHigh ? "↑" : "↓";
+  return (
+    <span style={{
+      color,
+      fontWeight: "bold",
+      fontSize: forPrint ? "9pt" : "11pt",
+      marginLeft: "4px",
+      display: "inline-block",
+    }}>
+      {symbol}
+    </span>
+  );
+}
+
+// ── Flat reference ranges for multiline sub-field lookup ─────────────────────
+// Covers CBC differential, RBC indices, PT/INR/PTT, ABG, UA sub-lines
+const TEST_REFERENCE_RANGES_FLAT: Record<string, { min?: number; max?: number }> = {
+  // CBC differential
+  "Neutrophils":   { min: 45,  max: 75  },
+  "Lymphocytes":   { min: 16,  max: 46  },
+  "Monocytes":     { min: 4,   max: 11  },
+  "Eosinophils":   { min: 0,   max: 8   },
+  "Basophils":     { min: 0,   max: 3   },
+  // RBC Indices
+  "MCV":           { min: 80,  max: 100 },
+  "MCH":           { min: 27,  max: 31  },
+  "RDW":           { min: 11.5,max: 14.5},
+  // Coagulation
+  "PT":            { min: 11.0,max: 13.5},
+  "INR":           { min: 0.8, max: 1.2 },
+  "aPTT":          { min: 25.0,max: 35.0},
+  // ABG
+  "pH":            { min: 4.5, max: 8.0 },
+  "pCO2":          { min: 35,  max: 45  },
+  "PO2":           { min: 80,  max: 100 },
+  "SaO2":          { min: 90             },
+  "HCO3":          { min: 22,  max: 26  },
+  // UA numeric sub-fields
+  "pH ":           { min: 4.5, max: 8.0 },
+  "Urobilinogen":  { min: 0.2, max: 1.0 },
+  "WBC":           { min: 0,   max: 5   },
+  "RBC":           { min: 0,   max: 2   },
+  // Electrolytes
+  "Na+":           { min: 135, max: 145 },
+  "K+":            { min: 3.4, max: 5.0 },
+  "Cl-":           { min: 95,  max: 108 },
+  "Bicarbonate":   { min: 20,  max: 32  },
+  "Ca++":          { min: 8.5, max: 10.5},
+  "Phosphorus":    { min: 3.0, max: 4.5 },
+  "Mg++":          { min: 1.8, max: 3.0 },
+};
+
 const PATHOLOGIST = {
   displayName: "Elizabeth Chua, MD, FPSP",
   license: "Lic. #00078301",
@@ -404,12 +492,29 @@ export default function PrintReportPage() {
                                     {lines.map((line, li) => {
                                       const [label, ...rest] = line.split(":");
                                       const val = rest.join(":").trim();
+                                      // Try to find a matching reference range for this sub-field
+                                      const subRef = (TEST_REFERENCE_RANGES_FLAT as Record<string, { min?: number; max?: number; unit?: string }>)[label.trim()];
+                                      const subRangeStr = subRef
+                                        ? (subRef.min !== undefined && subRef.max !== undefined
+                                            ? `${subRef.min} - ${subRef.max}`
+                                            : subRef.min !== undefined
+                                            ? `> ${subRef.min}`
+                                            : subRef.max !== undefined
+                                            ? `< ${subRef.max}`
+                                            : "")
+                                        : "";
+                                      const subAbnormal = subRangeStr ? getAbnormalStatus(val, subRangeStr) : null;
+                                      const subColor = subAbnormal === "high" ? "#dc2626" : subAbnormal === "low" ? "#2563eb" : "inherit";
                                       return (
                                         <tr key={`${section}-${i}-${li}`} style={{ borderBottom: li === lines.length - 1 ? "1px solid #eee" : "none" }}>
                                           <td style={{ paddingLeft: "20px", paddingTop: "2px", paddingBottom: "2px", color: "#333" }}>{label}</td>
-                                          <td style={{ textAlign: "center", fontWeight: "600", paddingTop: "2px", paddingBottom: "2px" }}>{val}</td>
+                                          <td style={{ textAlign: "center", fontWeight: "600", paddingTop: "2px", paddingBottom: "2px", color: subColor }}>
+                                            {val}<AbnormalIndicator status={subAbnormal} forPrint />
+                                          </td>
                                           {hasAnyRange && <td></td>}
-                                          <td style={{ textAlign: "center", paddingTop: "2px", paddingBottom: "2px", color: "#555" }}>{val}</td>
+                                          <td style={{ textAlign: "center", paddingTop: "2px", paddingBottom: "2px", color: subColor }}>
+                                            {val}<AbnormalIndicator status={subAbnormal} forPrint />
+                                          </td>
                                           {hasAnyRange && <td></td>}
                                         </tr>
                                       );
@@ -418,33 +523,39 @@ export default function PrintReportPage() {
                                 );
                               }
 
-                              return (
-                                <tr key={`${section}-${i}`} style={{ borderBottom: "1px solid #eee" }}>
-                                  <td style={{ paddingLeft: "12px", paddingTop: "3px", paddingBottom: "3px" }}>{test.name}</td>
-                                  <td style={{ textAlign: "center", fontWeight: "700", paddingTop: "3px", paddingBottom: "3px" }}>
-                                    {test.result}
-                                    {showRange && test.referenceRange && (
-                                      <div style={{ fontSize: "7.5pt", fontWeight: "normal", color: "#666" }}>{test.referenceRange}</div>
-                                    )}
-                                  </td>
-                                  {hasAnyRange && (
-                                    <td style={{ textAlign: "center", color: "#555", paddingTop: "3px", paddingBottom: "3px" }}>
-                                      {showRange ? test.unit : ""}
+                              {
+                                const abnormal = showRange ? getAbnormalStatus(test.result, test.referenceRange) : null;
+                                const resultColor = abnormal === "high" ? "#dc2626" : abnormal === "low" ? "#2563eb" : "inherit";
+                                return (
+                                  <tr key={`${section}-${i}`} style={{ borderBottom: "1px solid #eee" }}>
+                                    <td style={{ paddingLeft: "12px", paddingTop: "3px", paddingBottom: "3px" }}>{test.name}</td>
+                                    <td style={{ textAlign: "center", fontWeight: "700", paddingTop: "3px", paddingBottom: "3px", color: resultColor }}>
+                                      {test.result}
+                                      <AbnormalIndicator status={abnormal} forPrint />
+                                      {showRange && test.referenceRange && (
+                                        <div style={{ fontSize: "7.5pt", fontWeight: "normal", color: "#666" }}>{test.referenceRange}</div>
+                                      )}
                                     </td>
-                                  )}
-                                  <td style={{ textAlign: "center", fontWeight: "700", paddingTop: "3px", paddingBottom: "3px" }}>
-                                    {test.result}
-                                    {showRange && test.referenceRange && (
-                                      <div style={{ fontSize: "7.5pt", fontWeight: "normal", color: "#666" }}>{test.referenceRange}</div>
+                                    {hasAnyRange && (
+                                      <td style={{ textAlign: "center", color: "#555", paddingTop: "3px", paddingBottom: "3px" }}>
+                                        {showRange ? test.unit : ""}
+                                      </td>
                                     )}
-                                  </td>
-                                  {hasAnyRange && (
-                                    <td style={{ textAlign: "center", color: "#555", paddingTop: "3px", paddingBottom: "3px" }}>
-                                      {showRange ? test.unit : ""}
+                                    <td style={{ textAlign: "center", fontWeight: "700", paddingTop: "3px", paddingBottom: "3px", color: resultColor }}>
+                                      {test.result}
+                                      <AbnormalIndicator status={abnormal} forPrint />
+                                      {showRange && test.referenceRange && (
+                                        <div style={{ fontSize: "7.5pt", fontWeight: "normal", color: "#666" }}>{test.referenceRange}</div>
+                                      )}
                                     </td>
-                                  )}
-                                </tr>
-                              );
+                                    {hasAnyRange && (
+                                      <td style={{ textAlign: "center", color: "#555", paddingTop: "3px", paddingBottom: "3px" }}>
+                                        {showRange ? test.unit : ""}
+                                      </td>
+                                    )}
+                                  </tr>
+                                );
+                              }
                             })}
                           </>
                         ))}
@@ -476,12 +587,7 @@ export default function PrintReportPage() {
                 <div style={{ borderTop: "1.5px solid #000", paddingTop: "8px", fontFamily: "Arial, sans-serif" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "16px", textAlign: "center" }}>
                     {/* Pathologist */}
-                    <SignatureBlock
-                      name={PATHOLOGIST.displayName}
-                      license={PATHOLOGIST.license}
-                      role="PATHOLOGIST"
-                      signatureFile={PATHOLOGIST.signatureFile}
-                    />
+                   
                     {/* MedTech 1 */}
                     <SignatureBlock
                       name={medtech1?.displayName ?? ""}
@@ -494,9 +600,15 @@ export default function PrintReportPage() {
                     <SignatureBlock
                       name={medtech2?.displayName ?? ""}
                       license={medtech2?.license ?? ""}
-                      role="QUALITY CONTROL"
+                      role="REGISTERED MEDICAL TECHNOLOGIST"
                       signatureFile={medtech2?.signatureFile}
                       placeholder={!medtech2}
+                    />
+                     <SignatureBlock
+                      name={PATHOLOGIST.displayName}
+                      license={PATHOLOGIST.license}
+                      role="PATHOLOGIST"
+                      signatureFile={PATHOLOGIST.signatureFile}
                     />
                   </div>
 
