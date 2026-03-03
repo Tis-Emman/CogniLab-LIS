@@ -22,6 +22,16 @@ import {
 import { useAuth } from "@/lib/authContext";
 import { TEST_REFERENCE_RANGES } from "@/lib/mockData";
 
+function generatePatientId(): string {
+  const now = new Date();
+  const date = now.toISOString().slice(0, 10).replace(/-/g, "");
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const random = Array.from({ length: 4 }, () =>
+    chars.charAt(Math.floor(Math.random() * chars.length)),
+  ).join("");
+  return `PAT-${date}-${random}`;
+}
+
 interface Patient {
   id: string;
   patient_id_no: string;
@@ -380,7 +390,7 @@ export default function PatientsPage() {
   const [abgValues, setAbgValues] = useState(INITIAL_ABG);
 
   const [formData, setFormData] = useState({
-    patient_id_no: "",
+    patient_id_no: generatePatientId(),
     last_name: "",
     first_name: "",
     middle_name: "",
@@ -536,9 +546,6 @@ export default function PatientsPage() {
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
-
-    if (!formData.patient_id_no.trim())
-      newErrors.patient_id_no = "Patient ID is required";
     if (!formData.last_name.trim())
       newErrors.last_name = "Last name is required";
     if (!formData.first_name.trim())
@@ -589,7 +596,6 @@ export default function PatientsPage() {
       setTimeout(() => {
         // Find the first error field and scroll to it smoothly
         const errorOrder = [
-          "patient_id_no",
           "last_name",
           "first_name",
           "age",
@@ -630,18 +636,6 @@ export default function PatientsPage() {
       normalized = "+63" + contact.slice(2);
     }
     // ...existing code...
-
-    // Check for duplicate Patient ID in memory
-    const patientIdExists = patients.some(
-      (patient) => patient.patient_id_no === formData.patient_id_no,
-    );
-    if (patientIdExists) {
-      setErrors((prev) => ({
-        ...prev,
-        patient_id_no: "Patient ID already exists",
-      }));
-      return;
-    }
 
     setSubmitting(true);
     try {
@@ -1343,7 +1337,15 @@ export default function PatientsPage() {
           </p>
         </div>
         <button
-          onClick={() => setShowForm(!showForm)}
+          onClick={() => {
+            if (!showForm) {
+              setFormData((prev) => ({
+                ...prev,
+                patient_id_no: generatePatientId(),
+              }));
+            }
+            setShowForm(!showForm);
+          }}
           className="px-6 py-3 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold flex items-center gap-2"
         >
           {showForm ? (
@@ -1376,28 +1378,14 @@ export default function PatientsPage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Patient ID Section */}
             <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Patient ID No. <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.patient_id_no}
-                  onChange={(e) =>
-                    setFormData({ ...formData, patient_id_no: e.target.value })
-                  }
-                  className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                    errors.patient_id_no
-                      ? "border-red-500 bg-red-50"
-                      : "border-gray-300"
-                  }`}
-                  placeholder="e.g., PAT001"
-                />
-                {errors.patient_id_no && (
-                  <p className="text-red-500 text-sm mt-1">
-                    {errors.patient_id_no}
-                  </p>
-                )}
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Patient ID No.{" "}
+                <span className="text-xs text-gray-500 font-normal">
+                  (Auto-generated)
+                </span>
+              </label>
+              <div className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-white text-gray-700 font-mono font-semibold tracking-wider">
+                {formData.patient_id_no}
               </div>
             </div>
 

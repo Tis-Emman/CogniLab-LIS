@@ -110,15 +110,7 @@ export const addPatient = async (patient: any, currentUser?: any) => {
     MOCK_PATIENTS.push(newPatient);
     
     // Create billing record for patient registration
-    const patientName = `${patient.first_name} ${patient.last_name}`;
-    await addBilling({
-      patient_name: patientName,
-      test_name: 'Patient Registration/Consultation',
-      section: 'REGISTRATION',
-      amount: 150,
-      description: `Initial consultation fee for ${patientName}`,
-    });
-    
+
     // Log the action
     await logActivity({
       user_id: currentUser?.id,
@@ -144,16 +136,7 @@ export const addPatient = async (patient: any, currentUser?: any) => {
   }
 
   // Create billing record for patient registration
-  if (data?.[0]) {
-    const patientName = `${patient.first_name} ${patient.last_name}`;
-    await addBilling({
-      patient_name: patientName,
-      test_name: 'Patient Registration/Consultation',
-      section: 'REGISTRATION',
-      amount: 150,
-      description: `Initial consultation fee for ${patientName}`,
-    });
-    
+    if (data?.[0]) {
     // Log the action
     await logActivity({
       user_id: currentUser?.id,
