@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/authContext';
-import { User, Mail, Phone, MapPin, Briefcase, Award, Edit2, Save, X } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
+import { User, Mail, Phone, MapPin, Briefcase, Award, Edit2, Save, X, Loader } from 'lucide-react';
 
 interface UserProfile {
   id: string;
@@ -23,116 +24,120 @@ interface UserProfile {
 export default function ProfilePage() {
   const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const [profile, setProfile] = useState<UserProfile>({
-    id: user?.id || 'unknown',
-    fullName: user?.full_name || 'Unknown User',
-    email: user?.email || '',
-    phone: '+63 917 1234567',
-    role: user?.role === 'faculty' ? 'Laboratory Director' : 'Medical Technologist',
-    department: user?.department || 'General',
-    avatar: user?.role === 'faculty' ? '👨‍⚕️' : '👤',
-    credentials: user?.role === 'faculty' ? ['RMT', 'RMT'] : ['RMT'],
-    certifications: user?.role === 'faculty' 
+  const buildProfile = (u: any, dbData?: any): UserProfile => ({
+    id: u?.id || 'unknown',
+    fullName: u?.full_name || 'Unknown User',
+    email: u?.email || '',
+    phone: dbData?.phone || '',
+    role: u?.role === 'faculty' ? 'Laboratory Director' : 'Medical Technologist',
+    department: u?.department || 'General',
+    avatar: u?.role === 'faculty' ? '👨‍⚕️' : '👤',
+    credentials: u?.role === 'faculty' ? ['RMT'] : ['RMT'],
+    certifications: u?.role === 'faculty'
       ? ['Clinical Pathology Specialist', 'ISO 15189 Quality Manager']
       : [],
-    joinDate: (user as any)?.join_date || new Date().toISOString().split('T')[0],
-    address: 'Lot 5, Block 2, Medical Complex',
-    city: 'Manila',
-    province: 'NCR',
+    joinDate: (u as any)?.join_date || new Date().toISOString().split('T')[0],
+    address: dbData?.address || '',
+    city: dbData?.city || '',
+    province: dbData?.province || '',
   });
 
-  const [editData, setEditData] = useState(profile);
+  const [profile, setProfile] = useState<UserProfile>(() => buildProfile(user));
+  const [editData, setEditData] = useState<UserProfile>(() => buildProfile(user));
 
-  // Update profile when user changes
+  // Load persisted fields from Supabase on mount
   useEffect(() => {
-    if (user) {
-      const newProfile = {
-        id: user.id,
-        fullName: user.full_name,
-        email: user.email,
-        phone: '+63 917 1234567',
-        role: user.role === 'faculty' ? 'Laboratory Director' : 'Medical Technologist',
-        department: user.department,
-        avatar: user.role === 'faculty' ? '👨‍⚕️' : '👤',
-        credentials: user.role === 'faculty' ? ['RMT'] : ['RMT'],
-        certifications: user.role === 'faculty'
-          ? ['Clinical Pathology Specialist', 'ISO 15189 Quality Manager']
-          : [],
-        joinDate: (user as any).join_date || new Date().toISOString().split('T')[0],
-        address: 'Lot 5, Block 2, Medical Complex',
-        city: 'Manila',
-        province: 'NCR',
-      };
-      setProfile(newProfile);
-      setEditData(newProfile);
-    }
+    if (!user?.id) return;
+
+    const loadProfile = async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('phone, address, city, province')
+        .eq('id', user.id)
+        .single();
+
+      if (!error && data) {
+        const updated = buildProfile(user, data);
+        setProfile(updated);
+        setEditData(updated);
+      }
+    };
+
+    loadProfile();
   }, [user]);
-
-  const handleEdit = () => {
-    setIsEditing(true);
-    setEditData(profile);
-  };
-
-  const handleSave = () => {
-    setProfile(editData);
-    setIsEditing(false);
-  };
-
-  const handleCancel = () => {
-    setIsEditing(false);
-    setEditData(profile);
-  };
-
-  const handleInputChange = (field: keyof UserProfile, value: any) => {
-    setEditData({ ...editData, [field]: value });
-  };
 
   // Inject animation keyframes
   useEffect(() => {
     const style = document.createElement('style');
     style.textContent = `
       @keyframes fadeInSlideUp {
-        from {
-          opacity: 0;
-          transform: translateY(20px);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
       }
-      
       @keyframes fadeInScale {
-        from {
-          opacity: 0;
-          transform: scale(0.95);
-        }
-        to {
-          opacity: 1;
-          transform: scale(1);
-        }
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
       }
-      
       @keyframes fadeIn {
-        from {
-          opacity: 0;
-        }
-        to {
-          opacity: 1;
-        }
+        from { opacity: 0; }
+        to { opacity: 1; }
       }
     `;
     document.head.appendChild(style);
-    return () => {
-      document.head.removeChild(style);
-    };
+    return () => { document.head.removeChild(style); };
   }, []);
 
+  const handleEdit = () => {
+    setIsEditing(true);
+    setEditData(profile);
+    setSaveMessage(null);
+  };
+
+  const handleSave = async () => {
+    if (!user?.id) return;
+    setSaving(true);
+    setSaveMessage(null);
+
+    const { error } = await supabase
+      .from('users')
+      .update({
+        phone: editData.phone,
+        address: editData.address,
+        city: editData.city,
+        province: editData.province,
+      })
+      .eq('id', user.id);
+
+    setSaving(false);
+
+    if (error) {
+      setSaveMessage({ type: 'error', text: 'Failed to save changes. Please try again.' });
+      return;
+    }
+
+    setProfile(editData);
+    setIsEditing(false);
+    setSaveMessage({ type: 'success', text: 'Profile updated successfully!' });
+    setTimeout(() => setSaveMessage(null), 3000);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditData(profile);
+    setSaveMessage(null);
+  };
+
+  const handleInputChange = (field: keyof UserProfile, value: any) => {
+    setEditData({ ...editData, [field]: value });
+  };
+
+  const inputCls = 'w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition bg-white';
+
   return (
-    <div className="space-y-8" style={{
-      animation: 'fadeIn 0.5s ease-out'
-    }}>
+    <div className="space-y-8" style={{ animation: 'fadeIn 0.5s ease-out' }}>
       {/* Header */}
       <div className="flex items-center justify-between" style={{
         animation: 'fadeInSlideUp 0.6s ease-out',
@@ -154,6 +159,13 @@ export default function ProfilePage() {
         )}
       </div>
 
+      {/* Save message */}
+      {saveMessage && (
+        <div className={`px-4 py-3 rounded-lg font-medium text-sm ${saveMessage.type === 'success' ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-red-100 text-red-800 border border-red-300'}`}>
+          {saveMessage.type === 'success' ? '✓ ' : '✕ '}{saveMessage.text}
+        </div>
+      )}
+
       {/* Profile Card */}
       <div className="bg-white rounded-lg shadow-lg p-8 border-l-4 border-[#3B6255]" style={{
         animation: 'fadeInScale 0.6s ease-out 0.2s backwards'
@@ -164,31 +176,9 @@ export default function ProfilePage() {
             {profile.avatar}
           </div>
           <div className="flex-1">
-            <h2 className="text-3xl font-bold text-gray-800 mb-2">
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editData.fullName}
-                  onChange={(e) => handleInputChange('fullName', e.target.value)}
-                  className="w-full px-3 py-1 border border-gray-300 rounded-lg text-gray-800"
-                />
-              ) : (
-                profile.fullName
-              )}
-            </h2>
-            <p className="text-lg text-[#3B6255] font-semibold mb-1">
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editData.role}
-                  onChange={(e) => handleInputChange('role', e.target.value)}
-                  className="w-full px-3 py-1 border border-gray-300 rounded-lg text-gray-800"
-                />
-              ) : (
-                profile.role
-              )}
-            </p>
-
+            <h2 className="text-3xl font-bold text-gray-800 mb-2">{profile.fullName}</h2>
+            <p className="text-lg text-[#3B6255] font-semibold mb-1">{profile.role}</p>
+            <p className="text-gray-500 text-sm">{profile.department}</p>
           </div>
         </div>
 
@@ -201,16 +191,8 @@ export default function ProfilePage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="text-sm font-semibold text-gray-700 mb-2 block">Email</label>
-              {isEditing ? (
-                <input
-                  type="email"
-                  value={editData.email}
-                  onChange={(e) => handleInputChange('email', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-800"
-                />
-              ) : (
-                <p className="text-gray-800">{profile.email}</p>
-              )}
+              {/* Email is not editable — it's tied to auth */}
+              <p className="text-gray-800">{profile.email}</p>
             </div>
             <div>
               <label className="text-sm font-semibold text-gray-700 mb-2 block">
@@ -222,10 +204,11 @@ export default function ProfilePage() {
                   type="tel"
                   value={editData.phone}
                   onChange={(e) => handleInputChange('phone', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-800"
+                  placeholder="+63 9XX XXX XXXX"
+                  className={inputCls}
                 />
               ) : (
-                <p className="text-gray-800">{profile.phone}</p>
+                <p className="text-gray-800">{profile.phone || <span className="text-gray-400 italic">Not set</span>}</p>
               )}
             </div>
           </div>
@@ -245,10 +228,11 @@ export default function ProfilePage() {
                   type="text"
                   value={editData.address}
                   onChange={(e) => handleInputChange('address', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-800"
+                  placeholder="e.g. Lot 5, Block 2, Medical Complex"
+                  className={inputCls}
                 />
               ) : (
-                <p className="text-gray-800">{profile.address}</p>
+                <p className="text-gray-800">{profile.address || <span className="text-gray-400 italic">Not set</span>}</p>
               )}
             </div>
             <div>
@@ -258,10 +242,11 @@ export default function ProfilePage() {
                   type="text"
                   value={editData.city}
                   onChange={(e) => handleInputChange('city', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-800"
+                  placeholder="e.g. Manila"
+                  className={inputCls}
                 />
               ) : (
-                <p className="text-gray-800">{profile.city}</p>
+                <p className="text-gray-800">{profile.city || <span className="text-gray-400 italic">Not set</span>}</p>
               )}
             </div>
             <div>
@@ -271,10 +256,11 @@ export default function ProfilePage() {
                   type="text"
                   value={editData.province}
                   onChange={(e) => handleInputChange('province', e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-800"
+                  placeholder="e.g. NCR"
+                  className={inputCls}
                 />
               ) : (
-                <p className="text-gray-800">{profile.province}</p>
+                <p className="text-gray-800">{profile.province || <span className="text-gray-400 italic">Not set</span>}</p>
               )}
             </div>
           </div>
@@ -291,16 +277,12 @@ export default function ProfilePage() {
               <label className="text-sm font-semibold text-gray-700 mb-3 block">Credentials</label>
               <div className="flex flex-wrap gap-2">
                 {profile.credentials.map((credential, idx) => (
-                  <span
-                    key={idx}
-                    className="px-4 py-2 bg-[#CBDED3] text-[#3B6255] rounded-full font-medium text-sm"
-                  >
+                  <span key={idx} className="px-4 py-2 bg-[#CBDED3] text-[#3B6255] rounded-full font-medium text-sm">
                     {credential}
                   </span>
                 ))}
               </div>
             </div>
-
             {profile.certifications.length > 0 && (
               <div>
                 <label className="text-sm font-semibold text-gray-700 mb-3 block">Certifications</label>
@@ -317,12 +299,15 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Additional Info */}
+        {/* Employment Details */}
         <div className="py-8">
           <h3 className="text-xl font-bold text-gray-800 mb-4">Employment Details</h3>
           <div className="p-4 bg-[#F0F4F1] rounded-lg border border-[#CBDED3]">
             <p className="text-gray-800">
-              <span className="font-semibold">Member Since:</span> {new Date(profile.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+              <span className="font-semibold">Member Since:</span>{' '}
+              {new Date(profile.joinDate).toLocaleDateString('en-US', {
+                year: 'numeric', month: 'long', day: 'numeric'
+              })}
             </p>
           </div>
         </div>
@@ -332,13 +317,15 @@ export default function ProfilePage() {
           <div className="flex gap-4 pt-6 border-t border-gray-200">
             <button
               onClick={handleSave}
-              className="flex-1 px-6 py-3 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold flex items-center justify-center gap-2"
+              disabled={saving}
+              className="flex-1 px-6 py-3 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <Save className="w-5 h-5" />
-              Save Changes
+              {saving ? <Loader className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+              {saving ? 'Saving...' : 'Save Changes'}
             </button>
             <button
               onClick={handleCancel}
+              disabled={saving}
               className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-semibold flex items-center justify-center gap-2"
             >
               <X className="w-5 h-5" />
