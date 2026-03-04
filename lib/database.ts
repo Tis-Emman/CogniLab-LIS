@@ -97,7 +97,7 @@ const FLAT_RANGES: Record<string, { min?: number; max?: number }> = {
   "Testosterone (Female)":                    { min: 6,    max: 86 },
   Folate:                                     { min: 3.1,  max: 17.5 },
   // ABG (also used as sub-line labels in multiline)
-  pH:                                         { min: 7.35, max: 7.45 },
+  pH:                                         { min: 4.5, max: 8.0  },
   pCO2:                                       { min: 35,   max: 45 },
   PO2:                                        { min: 80,   max: 100 },
   SaO2:                                       { min: 90 },
@@ -471,6 +471,7 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
     return newResult;
   }
 
+  // ── REAL SUPABASE PATH ──────────────────────────────────────────────────
   const { data, error } = await supabase
     .from('test_results')
     .insert([result])
@@ -482,7 +483,27 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
   }
 
   if (data?.[0]) {
+    const isComponent = BILLING_PARENT_TESTS[result.section]?.includes(result.test_name);
     const testCost = TEST_PRICING[result.section]?.[result.test_name] || 300;
+
+    if (!skipBilling && !isComponent) {
+      const { error: billingError } = await supabase
+        .from('billing')
+        .insert([{
+          patient_name: result.patient_name,
+          test_name: result.test_name,
+          section: result.section,
+          amount: testCost,
+          status: 'unpaid',
+          description: `Lab test: ${result.test_name}`,
+          date_created: new Date().toISOString().split('T')[0],
+        }]);
+
+      if (billingError) {
+        console.error('Error creating billing record:', billingError);
+      }
+    }
+
     await logActivity({
       user_id: currentUser?.id,
       user_name: currentUser?.full_name || 'Unknown User',
@@ -490,12 +511,13 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
       action: 'edit',
       resource: `${result.test_name} - ${result.patient_name}`,
       resource_type: 'Test Result',
-      description: `Created test result: ${result.test_name} for patient ${result.patient_name} in section ${result.section}. Auto-billed: ₱${testCost.toFixed(2)}`,
+      description: `Created test result: ${result.test_name} for patient ${result.patient_name} in section ${result.section}${!skipBilling && !isComponent ? `. Auto-billed: ₱${testCost.toFixed(2)}` : ''}`,
     });
   }
 
   return data?.[0] || null;
 };
+
 
 export const updateTestResult = async (id: string, result: any, currentUser?: any) => {
   if (USE_MOCK_DATA) {
