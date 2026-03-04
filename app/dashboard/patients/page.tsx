@@ -22,14 +22,19 @@ import {
 import { useAuth } from "@/lib/authContext";
 import { TEST_REFERENCE_RANGES } from "@/lib/mockData";
 
-function generatePatientId(): string {
-  const now = new Date();
-  const date = now.toISOString().slice(0, 10).replace(/-/g, "");
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  const random = Array.from({ length: 4 }, () =>
-    chars.charAt(Math.floor(Math.random() * chars.length)),
-  ).join("");
-  return `PAT-${date}-${random}`;
+function generatePatientId(existingPatients: any[]): string {
+  const year = new Date().getFullYear().toString().slice(-2); // "26"
+  const prefix = `CL-${year}-PAT-`;
+  
+  // Find highest existing number
+  const nums = existingPatients
+    .map(p => p.patient_id_no)
+    .filter(id => id?.startsWith(prefix))
+    .map(id => parseInt(id.replace(prefix, ''), 10))
+    .filter(n => !isNaN(n));
+  
+  const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+  return `${prefix}${String(next).padStart(3, '0')}`;
 }
 
 interface Patient {
@@ -390,23 +395,23 @@ export default function PatientsPage() {
   const [abgValues, setAbgValues] = useState(INITIAL_ABG);
 
   const [formData, setFormData] = useState({
-    patient_id_no: generatePatientId(),
-    last_name: "",
-    first_name: "",
-    middle_name: "",
-    age: "",
-    birthdate: "",
-    sex: "Male",
-    contact_no: "",
-    address_house_no: "",
-    address_street: "",
-    address_barangay: "",
-    municipality: "",
-    province: "",
-    medical_history: "",
-    medications: "",
-    allergy: "",
-  });
+  patient_id_no: "", // ← empty, generated when button is clicked
+  last_name: "",
+  first_name: "",
+  middle_name: "",
+  age: "",
+  birthdate: "",
+  sex: "Male",
+  contact_no: "",
+  address_house_no: "",
+  address_street: "",
+  address_barangay: "",
+  municipality: "",
+  province: "",
+  medical_history: "",
+  medications: "",
+  allergy: "",
+});
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -428,6 +433,11 @@ export default function PatientsPage() {
     eosinophils: "",
     basophils: "",
   });
+
+  // Routine Fecalysis
+const [fecalysisColor, setFecalysisColor] = useState('');
+const [fecalysisOva, setFecalysisOva] = useState('');
+const [fecalysisParasiteName, setFecalysisParasiteName] = useState('');
 
   // RBC Indices State
   const [rbcValues, setRbcValues] = useState({
@@ -475,7 +485,6 @@ export default function PatientsPage() {
     finalReport: "",
     sensitivity: "",
   });
-
   // Success Summary State
   const [showSuccessSummary, setShowSuccessSummary] = useState(false);
   const [savedTestsData, setSavedTestsData] = useState<any[]>([]);
@@ -1289,6 +1298,9 @@ export default function PatientsPage() {
       finalReport: "",
       sensitivity: "",
     });
+    setFecalysisColor("");       // ← add here
+  setFecalysisOva("");         // ← add here
+  setFecalysisParasiteName("")
     setLipidSubTest("");
     setLipidValue("");
     setLftSubTest("");
@@ -1337,26 +1349,26 @@ export default function PatientsPage() {
           </p>
         </div>
         <button
-          onClick={() => {
-            if (!showForm) {
-              setFormData((prev) => ({
-                ...prev,
-                patient_id_no: generatePatientId(),
-              }));
-            }
-            setShowForm(!showForm);
-          }}
-          className="px-6 py-3 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold flex items-center gap-2"
-        >
-          {showForm ? (
-            <>✕ Cancel</>
-          ) : (
-            <>
-              <Plus className="w-5 h-5" />
-              Add New Patient
-            </>
-          )}
-        </button>
+  onClick={() => {
+    if (!showForm) {
+      setFormData((prev) => ({
+        ...prev,
+        patient_id_no: generatePatientId(patients), // ← pass patients here
+      }));
+    }
+    setShowForm(!showForm);
+  }}
+  className="px-6 py-3 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold flex items-center gap-2"
+>
+  {showForm ? (
+    <>✕ Cancel</>
+  ) : (
+    <>
+      <Plus className="w-5 h-5" />
+      Add New Patient
+    </>
+  )}
+</button>
       </div>
 
       {/* Add Patient Form */}

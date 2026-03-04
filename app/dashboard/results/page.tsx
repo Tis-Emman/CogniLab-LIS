@@ -252,6 +252,7 @@ const MULTI_FIELD_TESTS = [
   "PT/INR, PTT",
   "Routine Urinalysis (UA)",
   "Culture and Sensitivity",
+  "Routine Fecalysis (FA)",
   // Clinical Chemistry grouped tests
   "Lipid Profile",
   "Liver Function Test",
@@ -468,6 +469,7 @@ const MULTI_LINE_TESTS = [
   "CBC",
   "PT/INR, PTT",
   "Routine Urinalysis (UA)",
+  "Routine Fecalysis (FA)",
   "Culture and Sensitivity",
   "Electrolytes",
   "Arterial Blood Gas",
@@ -520,6 +522,12 @@ export default function TestResultsPage() {
     eosinophils: "",
     basophils: "",
   });
+
+  // Routine Fecalysis
+  const [fecalysisColor, setFecalysisColor] = useState("");
+  const [fecalysisOva, setFecalysisOva] = useState("");
+  const [fecalysisParasiteName, setFecalysisParasiteName] = useState("");
+
   const [cbcRbcValues, setCbcRbcValues] = useState({
     mcv: "",
     mch: "",
@@ -855,6 +863,19 @@ export default function TestResultsPage() {
       )
         newErrors.cultureSensitivity =
           "All culture and sensitivity fields are required";
+
+      // ── ADD THIS ──────────────────────────────────────────────
+    } else if (selectedTest === "Routine Fecalysis (FA)") {
+      if (!fecalysisColor) newErrors.fecalysis = "Color is required";
+      else if (!fecalysisOva)
+        newErrors.fecalysis = "Ova/Parasite result is required";
+      else if (
+        fecalysisOva !== "No Ova or Parasite seen" &&
+        !fecalysisParasiteName
+      )
+        newErrors.fecalysis = "Name of Ova/Parasite seen is required";
+      // ─────────────────────────────────────────────────────────
+    } else if (selectedTest === "Lipid Profile") {
     } else if (selectedTest === "Lipid Profile") {
       if (!lipidSubTest) newErrors.lipid = "Please select a sub-test";
       else if (!lipidValue) newErrors.lipid = "Result value is required";
@@ -1038,6 +1059,47 @@ export default function TestResultsPage() {
           : await addTestResult(payload, user);
 
         // ── Clinical Chemistry grouped tests ───────────────────────────────
+      } else if (selectedTest === "Culture and Sensitivity") {
+        const resultString = [
+          `Culture: ${cultureSensitivityValues.culture}`,
+          `Preliminary Report: ${cultureSensitivityValues.preliminaryReport}`,
+          `Final Report: ${cultureSensitivityValues.finalReport}`,
+          `Sensitivity: ${cultureSensitivityValues.sensitivity}`,
+        ].join("\n");
+        const payload = {
+          patient_name: patientName,
+          section: selectedSection,
+          test_name: "Culture and Sensitivity",
+          result_value: resultString,
+          reference_range: "",
+          unit: "",
+        };
+        editingId
+          ? await updateTestResult(editingId, payload, user)
+          : await addTestResult(payload, user);
+
+        // ── ADD THIS ────────────────────────────────────────────────────────
+      } else if (selectedTest === "Routine Fecalysis (FA)") {
+        const resultLines = [
+          `Color: ${fecalysisColor}`,
+          `Ova/Parasite: ${fecalysisOva}`,
+          ...(fecalysisOva !== "No Ova or Parasite seen" &&
+          fecalysisParasiteName
+            ? [`Name of Ova/Parasite: ${fecalysisParasiteName}`]
+            : []),
+        ].join("\n");
+
+        const payload = {
+          patient_name: patientName,
+          section: selectedSection,
+          test_name: "Routine Fecalysis (FA)",
+          result_value: resultLines,
+          reference_range: "",
+          unit: "",
+        };
+        editingId
+          ? await updateTestResult(editingId, payload, user)
+          : await addTestResult(payload, user);
       } else if (selectedTest === "Lipid Profile") {
         const sub = LIPID_PROFILE_TESTS.find((t) => t.name === lipidSubTest)!;
         const payload = {
@@ -1284,6 +1346,13 @@ export default function TestResultsPage() {
         rbcMicroscopic: num(kv["RBC (Microscopic)"]),
         bacteriaCastsCrystals: kv["Bacteria/Casts/Crystals"] || "",
       });
+    } else if (result.test_name === "Routine Fecalysis (FA)") {
+      setSelectedTest("Routine Fecalysis (FA)");
+      const kv = parseKV(raw);
+      setFecalysisColor(kv["Color"] || "");
+      setFecalysisOva(kv["Ova/Parasite"] || "");
+      setFecalysisParasiteName(kv["Name of Ova/Parasite"] || "");
+      // ─
     } else if (result.test_name === "Culture and Sensitivity") {
       setSelectedTest("Culture and Sensitivity");
       const kv = parseKV(raw);
@@ -2234,6 +2303,93 @@ export default function TestResultsPage() {
                     onChangeValue={setLipidValue}
                     error={errors.lipid}
                   />
+                )}
+
+                {/* ── Routine Fecalysis (FA) ─────────────────────────────── */}
+                {selectedTest === "Routine Fecalysis (FA)" && (
+                  <div className="space-y-4">
+                    <label className="block text-sm font-semibold text-gray-700">
+                      Routine Fecalysis Components{" "}
+                      <span className="text-red-500">*</span>
+                    </label>
+
+                    {/* Physical Examination */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
+                      <p className="text-xs font-bold text-blue-700 uppercase tracking-wide">
+                        Physical Examination
+                      </p>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Color
+                        </label>
+                        <input
+                          type="text"
+                          value={fecalysisColor}
+                          onChange={(e) => setFecalysisColor(e.target.value)}
+                          placeholder="e.g. Brown, Yellow, Green"
+                          className={inputCls()}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Microscopic Examination */}
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 space-y-3">
+                      <p className="text-xs font-bold text-purple-700 uppercase tracking-wide">
+                        Microscopic Examination
+                      </p>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-600">
+                          Ova or Parasite
+                        </label>
+                        <select
+                          value={fecalysisOva}
+                          onChange={(e) => {
+                            setFecalysisOva(e.target.value);
+                            setFecalysisParasiteName("");
+                          }}
+                          className={selectCls()}
+                        >
+                          <option value="">Select result</option>
+                          <option value="No Ova or Parasite seen">
+                            No Ova or Parasite seen
+                          </option>
+                          <option value="Scant/Few Ova or Parasite seen">
+                            Scant/Few Ova or Parasite seen
+                          </option>
+                          <option value="Moderate Ova or Parasite seen">
+                            Moderate Ova or Parasite seen
+                          </option>
+                          <option value="Many/Numerous Ova or Parasite seen">
+                            Many/Numerous Ova or Parasite seen
+                          </option>
+                        </select>
+                      </div>
+
+                      {/* Conditional parasite name */}
+                      {fecalysisOva &&
+                        fecalysisOva !== "No Ova or Parasite seen" && (
+                          <div>
+                            <label className="text-xs font-semibold text-gray-600">
+                              Name of Ova/Parasite seen{" "}
+                              <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={fecalysisParasiteName}
+                              onChange={(e) =>
+                                setFecalysisParasiteName(e.target.value)
+                              }
+                              placeholder="e.g. Ascaris lumbricoides, Trichuris trichiura"
+                              className={inputCls()}
+                            />
+                          </div>
+                        )}
+                    </div>
+
+                    {errors.fecalysis && (
+                      <p className="text-red-500 text-sm">{errors.fecalysis}</p>
+                    )}
+                  </div>
                 )}
 
                 {/* ── Liver Function Test ──────────────────────────────────── */}
