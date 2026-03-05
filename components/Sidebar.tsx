@@ -7,14 +7,14 @@ import { useAuth } from '@/lib/authContext';
 import {
   BarChart3,
   Users,
+  ClipboardList,
   Beaker,
   CreditCard,
+  ShieldCheck,
   FileText,
   History,
   LogOut,
   User,
-  Shield,
-  Activity,
   Menu,
   X,
 } from 'lucide-react';
@@ -31,44 +31,42 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Check if mobile on mount and resize
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
       if (mobile) {
-        setIsOpen(true); // Always show full sidebar on mobile when open
+        setIsOpen(true);
       }
     };
-    
     checkMobile();
     window.addEventListener('resize', checkMobile);
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // Close mobile menu when route changes
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [pathname]);
 
   const handleLogout = async () => {
     await signOut();
-    // signOut handles redirect internally via window.location.href
   };
 
   const isActive = (path: string) => pathname === path;
 
   const menuItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: BarChart3 },
-    { label: 'Patients', path: '/dashboard/patients', icon: Users },
-    { label: 'Test Results', path: '/dashboard/results', icon: Beaker },
-    { label: 'Billing', path: '/dashboard/billing', icon: CreditCard },
-    { label: 'Reports', path: '/dashboard/report', icon: FileText },
-    { label: 'Access History', path: '/dashboard/history', icon: History },
-    { label: 'Profile', path: '/dashboard/profile', icon: User },
+    { label: 'Dashboard',        path: '/dashboard',                   icon: BarChart3 },
+    { label: 'Patients',         path: '/dashboard/patients',          icon: Users },
+    // ── Workflow ──────────────────────────────────────────────────────────
+    { label: 'Test Request',     path: '/dashboard/test-request',      icon: ClipboardList },
+    { label: 'Billing',          path: '/dashboard/billing',           icon: CreditCard },
+    { label: 'Test Results',     path: '/dashboard/results',           icon: Beaker },
+    { label: 'Quality Checking', path: '/dashboard/quality-checking',  icon: ShieldCheck },
+    { label: 'Reports',          path: '/dashboard/report',            icon: FileText },
+    // ─────────────────────────────────────────────────────────────────────
+    { label: 'Access History',   path: '/dashboard/history',           icon: History },
+    { label: 'Profile',          path: '/dashboard/profile',           icon: User },
   ];
-
-
 
   return (
     <>
@@ -94,8 +92,8 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
       {/* Sidebar */}
       <aside
         className={`fixed top-0 left-0 h-screen bg-gradient-to-b from-[#3B6255] to-green-900 text-white transition-all duration-300 shadow-lg z-40
-          ${isMobile 
-            ? `w-64 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}` 
+          ${isMobile
+            ? `w-64 ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`
             : `${isOpen ? 'w-64' : 'w-20'}`
           }`}
       >
@@ -132,26 +130,37 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
         </div>
 
         {/* Navigation Menu */}
-        <nav className="mt-8 px-3 space-y-2 overflow-y-auto max-h-[calc(100vh-280px)]">
-          {menuItems.map((item) => {
+        <nav className="mt-8 px-3 space-y-1 overflow-y-auto max-h-[calc(100vh-280px)]">
+          {menuItems.map((item, index) => {
             const Icon = item.icon;
+            // Workflow divider label above Test Request
+            const showWorkflowLabel =
+              index === 2 && (isOpen || isMobile);
+            // Divider after Reports (before Access History)
+            const showDivider = index === 7;
+
             return (
-              <Link
-                key={item.path}
-                href={item.path}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition ${
-                  isActive(item.path)
-                    ? 'bg-[#8BA49A] text-white'
-                    : 'text-[#CBDED3] hover:bg-[#5A7669] hover:text-white'
-                }`}
-                title={!isOpen && !isMobile ? item.label : ''}
-              >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                {(isOpen || isMobile) && <span className="text-sm font-medium">{item.label}</span>}
-              </Link>
+              <div key={item.path}>
+                {showDivider && (
+                  <div className="border-t border-[#8BA49A] my-2" />
+                )}
+                <Link
+                  href={item.path}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-lg transition ${
+                    isActive(item.path)
+                      ? 'bg-[#8BA49A] text-white'
+                      : 'text-[#CBDED3] hover:bg-[#5A7669] hover:text-white'
+                  }`}
+                  title={!isOpen && !isMobile ? item.label : ''}
+                >
+                  <Icon className="w-5 h-5 flex-shrink-0" />
+                  {(isOpen || isMobile) && (
+                    <span className="text-sm font-medium">{item.label}</span>
+                  )}
+                </Link>
+              </div>
             );
           })}
-
         </nav>
 
         {/* Logout Button */}

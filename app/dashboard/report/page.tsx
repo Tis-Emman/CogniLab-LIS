@@ -159,6 +159,8 @@ export default function PrintReportPage() {
   const [billings, setBillings] = useState<any[]>([]);
   const [medtech1Id, setMedtech1Id] = useState<string>("");
   const [medtech2Id, setMedtech2Id] = useState<string>("");
+  const [patientSearch, setPatientSearch] = useState<string>("");
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
   const medtech1 = MEDTECH_LIST.find((m) => m.id === medtech1Id) ?? null;
   const medtech2 = MEDTECH_LIST.find((m) => m.id === medtech2Id) ?? null;
@@ -261,18 +263,51 @@ export default function PrintReportPage() {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Select Patient <span className="text-red-500">*</span>
               </label>
-              <select
-                value={selectedPatientId}
-                onChange={(e) => { setSelectedPatientId(e.target.value); setShowPreview(false); setSelectedReport(null); }}
-                className="w-full px-4 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-[#3B6255] focus:border-[#3B6255] outline-none transition text-gray-800 font-medium bg-white"
-              >
-                <option value="">-- Select a Patient --</option>
-                {patients.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.first_name} {p.last_name} (ID: {p.patient_id_no})
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search patient name or ID..."
+                  value={patientSearch}
+                  onChange={(e) => {
+                    setPatientSearch(e.target.value);
+                    setShowPatientDropdown(true);
+                    setSelectedPatientId("");
+                    setShowPreview(false);
+                    setSelectedReport(null);
+                  }}
+                  onFocus={() => setShowPatientDropdown(true)}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-[#3B6255] focus:border-[#3B6255] outline-none transition text-gray-800 font-medium bg-white"
+                />
+                {showPatientDropdown && patientSearch && (
+                  <div className="absolute z-10 w-full bg-white border-2 border-gray-300 rounded-xl shadow-lg mt-1 max-h-48 overflow-y-auto">
+                    {patients
+                      .filter((p) =>
+                        `${p.first_name} ${p.last_name}`.toLowerCase().includes(patientSearch.toLowerCase()) ||
+                        p.patient_id_no?.toLowerCase().includes(patientSearch.toLowerCase())
+                      )
+                      .map((p) => (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setSelectedPatientId(p.id);
+                            setPatientSearch(`${p.first_name} ${p.last_name}`);
+                            setShowPatientDropdown(false);
+                          }}
+                          className="px-4 py-2 hover:bg-[#F0F4F1] cursor-pointer text-gray-800 text-sm"
+                        >
+                          <span className="font-semibold">{p.first_name} {p.last_name}</span>
+                          <span className="text-gray-400 ml-2 text-xs">{p.patient_id_no}</span>
+                        </div>
+                      ))}
+                    {patients.filter((p) =>
+                      `${p.first_name} ${p.last_name}`.toLowerCase().includes(patientSearch.toLowerCase()) ||
+                      p.patient_id_no?.toLowerCase().includes(patientSearch.toLowerCase())
+                    ).length === 0 && (
+                      <div className="px-4 py-2 text-gray-400 text-sm">No patients found</div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             <button

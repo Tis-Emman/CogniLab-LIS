@@ -684,6 +684,7 @@ export default function TestResultsPage() {
     const data = await fetchPatients();
     setPatients(data);
   };
+   
   const loadBillings = async () => {
     const data = await fetchBilling();
     setBillings(data);
@@ -3134,6 +3135,23 @@ export default function TestResultsPage() {
                   >
                     TEST RESULT
                   </h3>
+                  {/* Section + Status info */}
+                  <div style={{ fontSize: "13px", marginBottom: "12px" }}>
+                    <span style={{ fontWeight: "bold" }}>Laboratory Section: </span>
+                    {printResult.section}
+                    {"  "}
+                    <span
+                      style={{
+                        marginLeft: "16px",
+                        fontWeight: "bold",
+                        color: abnormalStatus === "high" || abnormalStatus === "alert-high" ? "#c0392b" : abnormalStatus === "low" || abnormalStatus === "alert-low" ? "#2471a3" : "#3B6255",
+                      }}
+                    >
+                      {statusDisplay}
+                    </span>
+                  </div>
+
+                  {/* Results table: Test | Result | Reference Range | Unit */}
                   <table
                     style={{
                       width: "100%",
@@ -3141,107 +3159,62 @@ export default function TestResultsPage() {
                       fontSize: "13px",
                     }}
                   >
-                    <tr>
-                      <td
-                        style={{
-                          padding: "10px",
-                          borderBottom: "1px solid #ddd",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        Laboratory Section:
-                      </td>
-                      <td
-                        style={{
-                          padding: "10px",
-                          borderBottom: "1px solid #ddd",
-                        }}
-                      >
-                        {printResult.section}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td
-                        style={{
-                          padding: "10px",
-                          borderBottom: "1px solid #ddd",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        Test Name:
-                      </td>
-                      <td
-                        style={{
-                          padding: "10px",
-                          borderBottom: "1px solid #ddd",
-                        }}
-                      >
-                        {printResult.test_name}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td
-                        style={{
-                          padding: "10px",
-                          borderBottom: "1px solid #ddd",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        Result Value:
-                      </td>
-                      <td
-                        style={{
-                          padding: "10px",
-                          borderBottom: "1px solid #ddd",
-                          fontWeight: "bold",
-                          color: "#3B6255",
-                          whiteSpace: "pre-line",
-                        }}
-                      >
-                        {printResult.result_value} {printResult.unit}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td
-                        style={{
-                          padding: "10px",
-                          borderBottom: "1px solid #ddd",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        Reference Range:
-                      </td>
-                      <td
-                        style={{
-                          padding: "10px",
-                          borderBottom: "1px solid #ddd",
-                        }}
-                      >
-                        {printResult.reference_range}
-                      </td>
-                    </tr>
-                    <tr>
-                      <td
-                        style={{
-                          padding: "10px",
-                          borderBottom: "1px solid #ddd",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        Status:
-                      </td>
-                      <td
-                        style={{
-                          padding: "10px",
-                          borderBottom: "1px solid #ddd",
-                          backgroundColor: "#CBDED3",
-                          color: "#3B6255",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        {statusDisplay}
-                      </td>
-                    </tr>
+                    <thead>
+                      <tr style={{ backgroundColor: "#3B6255", color: "#fff" }}>
+                        <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: "bold" }}>Test</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: "bold" }}>Result</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: "bold" }}>Reference Range</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left", fontWeight: "bold" }}>Unit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {MULTI_LINE_TESTS.includes(printResult.test_name)
+                        ? printResult.result_value.split("\n").map((line, i) => {
+                            const colonIdx = line.indexOf(":");
+                            if (colonIdx === -1) return null;
+                            const testLabel = line.slice(0, colonIdx).trim();
+                            const rawVal = line.slice(colonIdx + 1).trim();
+                            // Strip trailing unit from value (e.g. "12 g/dL" → value="12", unit="g/dL")
+                            const unitMatch = rawVal.match(/^([\d.]+)\s+([^\s].*)$/) || rawVal.match(/^(.+?)\s+((?:g\/dL|%|fL|pg|x10\^9\/L|IEU\/dL|hpf|mmHg|mEq\/L|mmol\/L|mg\/dL|U\/L|seconds))$/);
+                            const displayVal = unitMatch ? unitMatch[1] : rawVal;
+                            const displayUnit = unitMatch ? unitMatch[2] : "";
+                            const ref = SUBLINE_RANGES[testLabel];
+                            const alert = ALERT_SUBLINE_RANGES[testLabel];
+                            const num = parseFloat(displayVal);
+                            let lineStatus: string | null = null;
+                            if (ref && !isNaN(num)) {
+                              if (alert?.alertLow !== undefined && num < alert.alertLow) lineStatus = "alert-low";
+                              else if (alert?.alertHigh !== undefined && num > alert.alertHigh) lineStatus = "alert-high";
+                              else if (ref.min !== undefined && num < ref.min) lineStatus = "low";
+                              else if (ref.max !== undefined && num > ref.max) lineStatus = "high";
+                            }
+                            const valColor = lineStatus === "alert-high" || lineStatus === "high" ? "#c0392b" : lineStatus === "alert-low" || lineStatus === "low" ? "#2471a3" : "#000";
+                            const arrow = lineStatus === "alert-high" ? "↑↑" : lineStatus === "high" ? "↑" : lineStatus === "alert-low" ? "↓↓" : lineStatus === "low" ? "↓" : "";
+                            return (
+                              <tr key={i} style={{ borderBottom: "1px solid #eee", backgroundColor: i % 2 === 0 ? "#f9f9f9" : "#fff" }}>
+                                <td style={{ padding: "8px 10px" }}>{testLabel}</td>
+                                <td style={{ padding: "8px 10px", fontWeight: "bold", color: valColor }}>{displayVal} {arrow}</td>
+                                <td style={{ padding: "8px 10px", color: "#555" }}>
+                                  {ref ? `${ref.min ?? ""}${ref.min !== undefined && ref.max !== undefined ? " - " : ""}${ref.max ?? ""}` : ""}
+                                </td>
+                                <td style={{ padding: "8px 10px", color: "#555" }}>{displayUnit}</td>
+                              </tr>
+                            );
+                          })
+                        : (
+                          <tr style={{ borderBottom: "1px solid #eee", backgroundColor: "#f9f9f9" }}>
+                            <td style={{ padding: "8px 10px" }}>{printResult.test_name}</td>
+                            <td style={{ padding: "8px 10px", fontWeight: "bold", color: abnormalStatus === "high" || abnormalStatus === "alert-high" ? "#c0392b" : abnormalStatus === "low" || abnormalStatus === "alert-low" ? "#2471a3" : "#3B6255" }}>
+                              {printResult.result_value}
+                              {" "}
+                              {abnormalStatus === "alert-high" ? "↑↑" : abnormalStatus === "high" ? "↑" : abnormalStatus === "alert-low" ? "↓↓" : abnormalStatus === "low" ? "↓" : ""}
+                            </td>
+                            <td style={{ padding: "8px 10px", color: "#555" }}>{printResult.reference_range}</td>
+                            <td style={{ padding: "8px 10px", color: "#555" }}>{printResult.unit}</td>
+                          </tr>
+                        )
+                      }
+                    </tbody>
                   </table>
                 </div>
                 <div style={{ marginBottom: "30px" }}>
