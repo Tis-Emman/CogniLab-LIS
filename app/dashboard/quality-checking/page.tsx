@@ -19,6 +19,7 @@ import {
   Calendar,
   MessageSquare,
   ArrowRight,
+  Trash2,
 } from "lucide-react";
 import { fetchTestResults } from "@/lib/database";
 import { supabase } from "@/lib/supabaseClient";
@@ -233,6 +234,7 @@ export default function QualityCheckingPage() {
 
   // Expand
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [qcToDelete, setQcToDelete] = useState<QualityCheck | null>(null);
 
   // Search for test results
   const [resultSearch, setResultSearch] = useState("");
@@ -313,6 +315,13 @@ export default function QualityCheckingPage() {
     setChecklist({});
     setSubmitError(null);
     setSubmitSuccess(null);
+  };
+
+  const handleDeleteQC = async () => {
+    if (!qcToDelete) return;
+    await supabase.from("quality_checks").delete().eq("id", qcToDelete.id);
+    setQcChecks((prev) => prev.filter((q) => q.id !== qcToDelete.id));
+    setQcToDelete(null);
   };
 
   const closeQCForm = () => {
@@ -980,6 +989,13 @@ export default function QualityCheckingPage() {
                           >
                             {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                           </button>
+                          <button
+                            onClick={() => setQcToDelete(qc)}
+                            className="p-1 text-red-400 hover:text-red-600 transition"
+                            title="Delete QC Record"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1036,6 +1052,60 @@ export default function QualityCheckingPage() {
           <li>Only PASS results can proceed to Report Generation</li>
         </ul>
       </div>
+
+      {/* ── Delete QC Confirmation Modal ──────────────────────────────────── */}
+      {qcToDelete && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style={{ animation: "fadeIn 0.2s ease-out" }}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" style={{ animation: "fadeInScale 0.3s ease-out" }}>
+
+            {/* Warning icon */}
+            <div className="flex flex-col items-center pt-8 pb-4 px-8">
+              <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mb-4 ring-8 ring-red-50">
+                <Trash2 className="w-10 h-10 text-red-600" />
+              </div>
+              <h3 className="text-2xl font-extrabold text-gray-800 mb-1">⚠️ Attention!</h3>
+              <p className="text-sm font-semibold text-red-600 uppercase tracking-widest">This action cannot be undone</p>
+            </div>
+
+            {/* Body */}
+            <div className="px-8 pb-6 text-center space-y-3">
+              <p className="text-gray-700 text-base">
+                You are about to permanently delete the QC record for:
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3">
+                <p className="font-bold text-gray-800 text-lg">{qcToDelete.patient_name}</p>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {qcToDelete.section} &mdash; <span className="font-semibold text-gray-700">{qcToDelete.test_name}</span>
+                </p>
+                <span className={`inline-flex items-center gap-1 mt-2 px-3 py-1 rounded-full text-xs font-bold ${qcToDelete.qc_result === "pass" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                  {qcToDelete.qc_result === "pass" ? <ShieldCheck className="w-3 h-3" /> : <ShieldX className="w-3 h-3" />}
+                  {qcToDelete.qc_result.toUpperCase()}
+                </span>
+              </div>
+              <p className="text-sm text-gray-400">
+                Once deleted, this QC record will be removed from the system and cannot be recovered.
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="border-t border-gray-100 px-8 py-5 flex gap-3">
+              <button
+                onClick={() => setQcToDelete(null)}
+                className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition font-semibold text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteQC}
+                className="flex-1 px-6 py-3 bg-red-600 hover:bg-red-700 active:scale-95 text-white rounded-xl transition font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-200"
+              >
+                <Trash2 className="w-4 h-4" />
+                Yes, Delete It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -14,6 +14,7 @@ import {
   CreditCard,
   ChevronRight,
   Check,
+  Trash2,
 } from "lucide-react";
 import {
   fetchTestResults,
@@ -496,6 +497,8 @@ export default function TestResultsPage() {
   const [selectedSection, setSelectedSection] = useState<string>("");
   const [selectedTest, setSelectedTest] = useState<string>("");
   const [patientName, setPatientName] = useState("");
+  const [patientSearch, setPatientSearch] = useState("");
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
   const [resultValue, setResultValue] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -513,6 +516,7 @@ export default function TestResultsPage() {
     null,
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [resultToDelete, setResultToDelete] = useState<TestResult | null>(null);
 
   // ── CBC ───────────────────────────────────────────────────────────────────
   const [cbcValues, setCbcValues] = useState({
@@ -1218,6 +1222,7 @@ export default function TestResultsPage() {
 
   const resetForm = () => {
     setPatientName("");
+    setPatientSearch("");
     setSelectedSection("");
     setSelectedTest("");
     setResultValue("");
@@ -1271,6 +1276,7 @@ export default function TestResultsPage() {
 
   const handleEdit = (result: TestResult) => {
     setPatientName(result.patient_name);
+    setPatientSearch(result.patient_name);
     setSelectedSection(result.section);
     setEditingId(result.id);
     setShowForm(true);
@@ -1369,11 +1375,11 @@ export default function TestResultsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm("Are you sure you want to delete this test result?")) {
-      await deleteTestResult(id);
-      await loadResults();
-    }
+  const handleDelete = async () => {
+    if (!resultToDelete) return;
+    await deleteTestResult(resultToDelete.id);
+    await loadResults();
+    setResultToDelete(null);
   };
 
   if (loading)
@@ -1497,23 +1503,54 @@ export default function TestResultsPage() {
           </h2>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Patient dropdown */}
+            {/* Patient search */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 Select Patient <span className="text-red-500">*</span>
               </label>
-              <select
-                value={patientName}
-                onChange={(e) => setPatientName(e.target.value)}
-                className={selectCls(errors.patientName)}
-              >
-                <option value="">--Select Patient--</option>
-                {patients.map((p) => (
-                  <option key={p.id} value={`${p.first_name} ${p.last_name}`}>
-                    {p.patient_id_no} - {p.first_name} {p.last_name}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search patient name or ID..."
+                  value={patientSearch}
+                  onChange={(e) => {
+                    setPatientSearch(e.target.value);
+                    setPatientName("");
+                    setShowPatientDropdown(true);
+                  }}
+                  onFocus={() => setShowPatientDropdown(true)}
+                  className={`w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-[#3B6255] outline-none transition text-gray-800 bg-white font-medium ${errors.patientName ? "border-red-500 bg-red-50" : "border-gray-300 hover:border-[#8BA49A]"}`}
+                />
+                {showPatientDropdown && patientSearch && (
+                  <div className="absolute z-20 w-full bg-white border-2 border-gray-300 rounded-xl shadow-lg mt-1 max-h-56 overflow-y-auto">
+                    {(() => {
+                      const q = patientSearch.toLowerCase();
+                      const matched = patients.filter((p) =>
+                        `${p.first_name} ${p.last_name}`.toLowerCase().includes(q) ||
+                        p.patient_id_no?.toLowerCase().includes(q)
+                      );
+                      if (matched.length === 0) return (
+                        <div className="px-4 py-3 text-gray-400 text-sm">No patients found</div>
+                      );
+                      return matched.map((p) => (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            const fullName = `${p.first_name} ${p.last_name}`;
+                            setPatientName(fullName);
+                            setPatientSearch(fullName);
+                            setShowPatientDropdown(false);
+                          }}
+                          className="px-4 py-2.5 hover:bg-[#F0F4F1] cursor-pointer border-b border-gray-50 last:border-0"
+                        >
+                          <p className="font-semibold text-gray-800 text-sm">{p.first_name} {p.last_name}</p>
+                          <p className="text-xs text-gray-400">{p.patient_id_no}</p>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )}
+              </div>
               {errors.patientName && (
                 <p className="text-red-500 text-sm mt-1">
                   {errors.patientName}
@@ -2967,6 +3004,14 @@ export default function TestResultsPage() {
                             Print
                           </button>
                         )}
+                        <button
+                          onClick={() => setResultToDelete(result)}
+                          className="text-red-500 hover:text-red-700 font-semibold text-sm flex items-center gap-1"
+                          title="Delete Result"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </button>
                       </td>
                     </tr>
                   );
@@ -2975,6 +3020,47 @@ export default function TestResultsPage() {
           </table>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {resultToDelete && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4" style={{ animation: "fadeIn 0.3s ease-out" }}>
+          <div className="bg-white rounded-lg shadow-2xl max-w-md w-full" style={{ animation: "fadeInScale 0.3s ease-out" }}>
+            <div className="bg-gradient-to-r from-red-500 to-red-700 text-white px-8 py-6 rounded-t-lg flex items-center gap-3">
+              <Trash2 className="w-6 h-6" />
+              <h3 className="text-xl font-bold">Delete Test Result</h3>
+            </div>
+            <div className="p-8 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-gray-700 text-sm">
+                  Are you sure you want to delete the test result for{" "}
+                  <span className="font-bold text-red-700">{resultToDelete.patient_name}</span>?
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  {resultToDelete.section} — {resultToDelete.test_name}
+                </p>
+              </div>
+              <p className="text-sm text-gray-500">
+                This action cannot be undone.
+              </p>
+            </div>
+            <div className="bg-gray-50 border-t border-gray-200 px-8 py-4 rounded-b-lg flex justify-end gap-3">
+              <button
+                onClick={() => setResultToDelete(null)}
+                className="px-6 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition font-semibold flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                Yes, Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Status Stepper Modal */}
       {expandedStepperId &&
