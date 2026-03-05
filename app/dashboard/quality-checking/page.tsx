@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   ShieldCheck,
   ShieldX,
@@ -11,12 +12,13 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   ClipboardCheck,
   AlertTriangle,
   User,
   Calendar,
   MessageSquare,
-  FlaskConical,
+  ArrowRight,
 } from "lucide-react";
 import { fetchTestResults } from "@/lib/database";
 import { supabase } from "@/lib/supabaseClient";
@@ -140,10 +142,69 @@ const QC_CHECKLIST = [
   { id: "completeness_of_data", label: "Completeness of Data",    optionA: "Complete",  optionB: "Incomplete",       passOption: "Complete" },
 ];
 
+// ─── LIS Workflow Stepper ─────────────────────────────────────────────────────
+
+const LIS_STEPS = [
+  { label: "Patient Registration", href: "/dashboard/patients" },
+  { label: "Test Request",         href: "/dashboard/test-requests" },
+  { label: "Billing",              href: "/dashboard/billing" },
+  { label: "Test Results",         href: "/dashboard/test-results" },
+  { label: "Quality Checking",     href: "/dashboard/quality-checking" },
+  { label: "Report Generation",    href: "/dashboard/report" },
+];
+
+function LISWorkflowStepper({ currentStep }: { currentStep: number }) {
+  const router = useRouter();
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 px-6 py-4">
+      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
+        LIS Workflow
+      </p>
+      <div className="flex items-center gap-1 flex-wrap">
+        {LIS_STEPS.map((step, i) => {
+          const isDone    = i < currentStep;
+          const isCurrent = i === currentStep;
+          const isNext    = i === currentStep + 1;
+          return (
+            <React.Fragment key={step.label}>
+              <button
+                onClick={() => router.push(step.href)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition
+                  ${isCurrent
+                    ? "bg-[#3B6255] text-white shadow-md"
+                    : isDone
+                    ? "bg-[#CBDED3] text-[#3B6255] hover:bg-[#b8d0c4]"
+                    : isNext
+                    ? "bg-gray-100 text-gray-600 hover:bg-gray-200 border border-dashed border-gray-300"
+                    : "bg-gray-50 text-gray-400 hover:bg-gray-100"
+                  }`}
+              >
+                {isDone ? (
+                  <CheckCircle className="w-3 h-3 shrink-0" />
+                ) : (
+                  <span className={`w-4 h-4 rounded-full text-[9px] flex items-center justify-center font-bold shrink-0
+                    ${isCurrent ? "bg-white text-[#3B6255]" : "bg-gray-300 text-gray-500"}`}>
+                    {i + 1}
+                  </span>
+                )}
+                {step.label}
+              </button>
+              {i < LIS_STEPS.length - 1 && (
+                <ChevronRight className={`w-3.5 h-3.5 shrink-0 ${i < currentStep ? "text-[#3B6255]" : "text-gray-300"}`} />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function QualityCheckingPage() {
   const { user } = useAuth();
+  const router = useRouter();
 
   // Data
   const [testResults, setTestResults] = useState<TestResult[]>([]);
@@ -151,7 +212,7 @@ export default function QualityCheckingPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<{ testName: string; patientName: string; passed: boolean } | null>(null);
 
   // Selected test result to QC
   const [selectedResult, setSelectedResult] = useState<TestResult | null>(null);
@@ -161,7 +222,6 @@ export default function QualityCheckingPage() {
   const [checklist, setChecklist] = useState<Record<string, string>>({});
 
   // Form fields
-  const [qcResult, setQcResult] = useState<"pass" | "fail">("pass");
   const [checkedBy, setCheckedBy] = useState("");
   const [comments, setComments] = useState("");
   const [checkedAt, setCheckedAt] = useState(toLocalDatetimeValue(new Date()));
@@ -176,6 +236,17 @@ export default function QualityCheckingPage() {
 
   // Search for test results
   const [resultSearch, setResultSearch] = useState("");
+
+  // ── Auto-derive QC result from checklist ─────────────────────────────────────
+  // If ANY item is on the fail option → overall result is FAIL
+  const failingItems = useMemo(() =>
+    QC_CHECKLIST.filter(item =>
+      checklist[item.id] && checklist[item.id] !== item.passOption
+    ),
+    [checklist]
+  );
+  const allItemsAnswered = QC_CHECKLIST.every(item => checklist[item.id] && checklist[item.id].length > 0);
+  const derivedQcResult: "pass" | "fail" = failingItems.length === 0 && allItemsAnswered ? "pass" : "fail";
 
   // ── Animations ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -237,7 +308,6 @@ export default function QualityCheckingPage() {
   const openQCForm = (result: TestResult) => {
     setSelectedResult(result);
     setShowQCForm(true);
-    setQcResult("pass");
     setComments("");
     setCheckedAt(toLocalDatetimeValue(new Date()));
     setChecklist({});
@@ -256,9 +326,14 @@ export default function QualityCheckingPage() {
   const handleSubmit = async () => {
     if (!selectedResult || !checkedBy.trim()) return;
 
-    const allChecked = QC_CHECKLIST.every((item) => checklist[item.id]);
-    if (!allChecked) {
+    if (!allItemsAnswered) {
       setSubmitError("Please complete all checklist items before submitting.");
+      return;
+    }
+
+    // If FAIL, require comments
+    if (derivedQcResult === "fail" && !comments.trim()) {
+      setSubmitError("Comments are required when any checklist item fails. Please describe the issue(s) found.");
       return;
     }
 
@@ -273,7 +348,7 @@ export default function QualityCheckingPage() {
       result_value: selectedResult.result_value,
       reference_range: selectedResult.reference_range,
       unit: selectedResult.unit,
-      qc_result: qcResult,
+      qc_result: derivedQcResult,
       checked_by: checkedBy.trim(),
       comments: comments.trim(),
       checked_at: new Date(checkedAt).toISOString(),
@@ -287,12 +362,14 @@ export default function QualityCheckingPage() {
       return;
     }
 
-    setSubmitSuccess(
-      `Quality check recorded: ${qcResult.toUpperCase()} for ${selectedResult.test_name} (${selectedResult.patient_name})`
-    );
-    setTimeout(() => setSubmitSuccess(null), 4000);
+    setSubmitSuccess({
+      testName: selectedResult.test_name,
+      patientName: selectedResult.patient_name,
+      passed: derivedQcResult === "pass",
+    });
     closeQCForm();
     loadData();
+    setTimeout(() => setSubmitSuccess(null), 10000);
   };
 
   // ── Filtered QC history ──────────────────────────────────────────────────────
@@ -315,21 +392,54 @@ export default function QualityCheckingPage() {
   return (
     <div className="space-y-8" style={{ animation: "fadeIn 0.5s ease-out" }}>
 
+      {/* ── LIS Workflow Stepper ───────────────────────────────────────────── */}
+      <div style={{ animation: "fadeInSlideUp 0.6s ease-out 0s both" }}>
+        <LISWorkflowStepper currentStep={4} />
+      </div>
+
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div
-        style={{ animation: "fadeInSlideUp 0.6s ease-out 0.1s both" }}
-      >
+      <div style={{ animation: "fadeInSlideUp 0.6s ease-out 0.1s both" }}>
         <h1 className="text-3xl font-bold text-gray-800">Quality Checking</h1>
         <p className="text-gray-600 text-sm mt-1">
           Review and verify test results before report generation
         </p>
       </div>
 
-      {/* ── Success banner ──────────────────────────────────────────────────── */}
+      {/* ── Success / Fail Banner ───────────────────────────────────────────── */}
       {submitSuccess && (
-        <div className="px-4 py-3 rounded-lg font-medium text-sm bg-green-100 text-green-800 border border-green-300"
-          style={{ animation: "fadeInScale 0.3s ease-out" }}>
-          ✓ {submitSuccess}
+        <div
+          className={`flex items-center justify-between gap-4 px-5 py-4 rounded-xl border ${
+            submitSuccess.passed
+              ? "bg-green-50 border-green-200 text-green-800"
+              : "bg-red-50 border-red-200 text-red-800"
+          }`}
+          style={{ animation: "fadeInScale 0.3s ease-out" }}
+        >
+          <div className="flex items-center gap-3">
+            {submitSuccess.passed
+              ? <ShieldCheck className="w-5 h-5 text-green-600 shrink-0" />
+              : <ShieldX className="w-5 h-5 text-red-500 shrink-0" />
+            }
+            <div>
+              <p className="font-semibold text-sm">
+                QC {submitSuccess.passed ? "PASSED" : "FAILED"} — {submitSuccess.testName} ({submitSuccess.patientName})
+              </p>
+              <p className={`text-xs mt-0.5 ${submitSuccess.passed ? "text-green-600" : "text-red-600"}`}>
+                {submitSuccess.passed
+                  ? "This result has passed all QC checks and can proceed to Report Generation."
+                  : "This result failed QC. It must be corrected and re-checked before a report can be generated."}
+              </p>
+            </div>
+          </div>
+          {submitSuccess.passed && (
+            <a
+              href="/dashboard/reports"
+              className="flex items-center gap-2 px-4 py-2 bg-[#3B6255] text-white rounded-lg text-sm font-semibold hover:bg-green-800 transition shrink-0 whitespace-nowrap"
+            >
+              Generate Report
+              <ArrowRight className="w-4 h-4" />
+            </a>
+          )}
         </div>
       )}
 
@@ -376,7 +486,7 @@ export default function QualityCheckingPage() {
         ))}
       </div>
 
-      {/* ── QC Form Modal ──────────────────────────────────────────────────── */}
+      {/* ── QC Form ────────────────────────────────────────────────────────── */}
       {showQCForm && selectedResult && (
         <div
           className="bg-white rounded-lg shadow-lg p-8 border-l-4 border-[#3B6255]"
@@ -430,14 +540,30 @@ export default function QualityCheckingPage() {
                 <ClipboardCheck className="w-4 h-4 text-[#3B6255]" />
                 QC Checklist
               </h3>
-              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                QC_CHECKLIST.every(i => checklist[i.id] && checklist[i.id].length > 0)
-                  ? "bg-green-100 text-green-700"
-                  : "bg-yellow-100 text-yellow-700"
-              }`}>
-                {Object.values(checklist).filter(v => typeof v === "string" && v.length > 0).length} / {QC_CHECKLIST.length} completed
-              </span>
+              <div className="flex items-center gap-2">
+                {/* Live QC result badge — auto-derived */}
+                {allItemsAnswered && (
+                  <span className={`flex items-center gap-1 text-xs font-bold px-3 py-1 rounded-full ${
+                    derivedQcResult === "pass"
+                      ? "bg-green-100 text-green-700"
+                      : "bg-red-100 text-red-700"
+                  }`}>
+                    {derivedQcResult === "pass"
+                      ? <><ShieldCheck className="w-3 h-3" /> Will PASS</>
+                      : <><ShieldX className="w-3 h-3" /> Will FAIL</>
+                    }
+                  </span>
+                )}
+                <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                  allItemsAnswered
+                    ? "bg-green-100 text-green-700"
+                    : "bg-yellow-100 text-yellow-700"
+                }`}>
+                  {Object.values(checklist).filter(v => typeof v === "string" && v.length > 0).length} / {QC_CHECKLIST.length} answered
+                </span>
+              </div>
             </div>
+
             <div className="border border-gray-200 rounded-lg overflow-hidden">
               {QC_CHECKLIST.map((item, index) => {
                 const selected = checklist[item.id];
@@ -451,13 +577,14 @@ export default function QualityCheckingPage() {
                       ${!selected ? "bg-white" : isPass ? "bg-green-50" : "bg-red-50"}
                     `}
                   >
-                    {/* Label */}
-                    <p className={`text-sm font-semibold w-48 shrink-0 ${
-                      isPass ? "text-[#3B6255]" : isFail ? "text-red-700" : "text-gray-800"
-                    }`}>
-                      {item.label}
-                    </p>
-                    {/* Toggle buttons */}
+                    <div className="flex items-center gap-2 w-52 shrink-0">
+                      {isFail && <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />}
+                      <p className={`text-sm font-semibold ${
+                        isPass ? "text-[#3B6255]" : isFail ? "text-red-700" : "text-gray-800"
+                      }`}>
+                        {item.label}
+                      </p>
+                    </div>
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -486,38 +613,44 @@ export default function QualityCheckingPage() {
                 );
               })}
             </div>
+
+            {/* Failing items summary */}
+            {failingItems.length > 0 && (
+              <div className="mt-3 flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+                <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-red-700 mb-1">
+                    {failingItems.length} item{failingItems.length > 1 ? "s" : ""} failed — this result will be marked FAIL and cannot proceed to Report Generation.
+                  </p>
+                  <p className="text-xs text-red-600">
+                    Failed: {failingItems.map(i => i.label).join(", ")}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
 
-            {/* QC Result — Pass / Fail */}
+            {/* QC Result — read-only, auto-derived */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-3">
-                QC Result <span className="text-red-500">*</span>
+                QC Result <span className="text-xs font-normal text-gray-400">(auto-determined by checklist)</span>
               </label>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setQcResult("pass")}
-                  className={`flex-1 py-3 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition border-2 ${
-                    qcResult === "pass"
-                      ? "bg-green-500 text-white border-green-500 shadow-md"
-                      : "bg-white text-gray-600 border-gray-200 hover:border-green-400"
-                  }`}
-                >
-                  <ShieldCheck className="w-4 h-4" />
-                  PASS
-                </button>
-                <button
-                  onClick={() => setQcResult("fail")}
-                  className={`flex-1 py-3 rounded-lg font-semibold text-sm flex items-center justify-center gap-2 transition border-2 ${
-                    qcResult === "fail"
-                      ? "bg-red-500 text-white border-red-500 shadow-md"
-                      : "bg-white text-gray-600 border-gray-200 hover:border-red-400"
-                  }`}
-                >
-                  <ShieldX className="w-4 h-4" />
-                  FAIL
-                </button>
+              <div className={`flex items-center gap-2 px-4 py-3 rounded-lg border-2 font-bold text-sm ${
+                !allItemsAnswered
+                  ? "bg-gray-50 border-gray-200 text-gray-400"
+                  : derivedQcResult === "pass"
+                  ? "bg-green-50 border-green-400 text-green-700"
+                  : "bg-red-50 border-red-400 text-red-700"
+              }`}>
+                {!allItemsAnswered ? (
+                  <><Clock className="w-4 h-4" /> Complete checklist above</>
+                ) : derivedQcResult === "pass" ? (
+                  <><ShieldCheck className="w-4 h-4" /> PASS — All checks cleared</>
+                ) : (
+                  <><ShieldX className="w-4 h-4" /> FAIL — {failingItems.length} issue{failingItems.length > 1 ? "s" : ""} found</>
+                )}
               </div>
             </div>
 
@@ -555,31 +688,41 @@ export default function QualityCheckingPage() {
               <label className="block text-sm font-semibold text-gray-700 mb-2">
                 <MessageSquare className="w-4 h-4 inline mr-1" />
                 Comments / Findings{" "}
-                <span className="text-gray-400 font-normal">(optional)</span>
+                <span className={`font-normal text-xs ${derivedQcResult === "fail" && allItemsAnswered ? "text-red-500 font-semibold" : "text-gray-400"}`}>
+                  {derivedQcResult === "fail" && allItemsAnswered ? "(required for FAIL)" : "(optional)"}
+                </span>
               </label>
               <textarea
                 value={comments}
                 onChange={(e) => setComments(e.target.value)}
                 placeholder={
-                  qcResult === "fail"
-                    ? "Describe the issue found..."
+                  derivedQcResult === "fail"
+                    ? "Required: Describe the issue(s) found so lab staff can correct and re-run..."
                     : "Add any notes or observations..."
                 }
                 rows={3}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition bg-white resize-none"
+                className={`w-full px-4 py-2 border rounded-lg text-gray-800 focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition bg-white resize-none ${
+                  derivedQcResult === "fail" && allItemsAnswered && !comments.trim()
+                    ? "border-red-300 bg-red-50"
+                    : "border-gray-300"
+                }`}
               />
             </div>
           </div>
 
-          {/* Fail warning */}
-          {qcResult === "fail" && (
-            <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+          {/* FAIL block warning */}
+          {derivedQcResult === "fail" && allItemsAnswered && (
+            <div className="flex items-start gap-3 bg-red-50 border border-red-300 rounded-lg p-4 mb-4">
               <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
-              <p className="text-sm text-red-700">
-                Marking as <strong>FAIL</strong> means this result did not pass
-                quality control. Please add comments describing the issue so the
-                lab staff can re-examine or re-run the test.
-              </p>
+              <div>
+                <p className="text-sm font-bold text-red-700 mb-1">
+                  This result will be marked FAIL and blocked from Report Generation.
+                </p>
+                <p className="text-xs text-red-600">
+                  The following items did not pass: <strong>{failingItems.map(i => i.label).join(", ")}</strong>.
+                  Lab staff must correct and re-submit a new test result before a report can be generated.
+                </p>
+              </div>
             </div>
           )}
 
@@ -594,23 +737,29 @@ export default function QualityCheckingPage() {
           <div className="flex gap-4">
             <button
               onClick={handleSubmit}
-              disabled={submitting || !checkedBy.trim()}
+              disabled={submitting || !checkedBy.trim() || !allItemsAnswered}
               className={`flex-1 px-6 py-3 text-white rounded-lg hover:shadow-lg transition font-semibold flex items-center justify-center gap-2 disabled:opacity-50 ${
-                qcResult === "pass"
+                !allItemsAnswered
+                  ? "bg-gray-400"
+                  : derivedQcResult === "pass"
                   ? "bg-gradient-to-r from-[#3B6255] to-green-700"
                   : "bg-gradient-to-r from-red-500 to-red-700"
               }`}
             >
               {submitting ? (
                 <Loader className="w-5 h-5 animate-spin" />
-              ) : qcResult === "pass" ? (
+              ) : !allItemsAnswered ? (
+                <ClipboardCheck className="w-5 h-5" />
+              ) : derivedQcResult === "pass" ? (
                 <ShieldCheck className="w-5 h-5" />
               ) : (
                 <ShieldX className="w-5 h-5" />
               )}
               {submitting
                 ? "Saving..."
-                : `Submit QC — ${qcResult.toUpperCase()}`}
+                : !allItemsAnswered
+                ? "Complete checklist to submit"
+                : `Submit QC — ${derivedQcResult.toUpperCase()}`}
             </button>
             <button
               onClick={closeQCForm}
@@ -689,25 +838,13 @@ export default function QualityCheckingPage() {
                       key={result.id}
                       className="border-b border-gray-100 hover:bg-[#F0F4F1] transition"
                     >
-                      <td className="py-4 px-6 font-medium text-gray-800">
-                        {result.patient_name}
-                      </td>
-                      <td className="py-4 px-6 text-gray-600 text-sm">
-                        {result.section}
-                      </td>
-                      <td className="py-4 px-6 text-gray-800 text-sm font-medium">
-                        {result.test_name}
-                      </td>
-                      <td className="py-4 px-6 font-mono text-sm text-gray-800">
-                        {result.result_value}
-                      </td>
+                      <td className="py-4 px-6 font-medium text-gray-800">{result.patient_name}</td>
+                      <td className="py-4 px-6 text-gray-600 text-sm">{result.section}</td>
+                      <td className="py-4 px-6 text-gray-800 text-sm font-medium">{result.test_name}</td>
+                      <td className="py-4 px-6 font-mono text-sm text-gray-800">{result.result_value}</td>
                       <td className="py-4 px-6 text-gray-500 text-sm">
                         {result.reference_range || "—"}
-                        {result.unit && (
-                          <span className="ml-1 text-xs text-gray-400">
-                            {result.unit}
-                          </span>
-                        )}
+                        {result.unit && <span className="ml-1 text-xs text-gray-400">{result.unit}</span>}
                       </td>
                       <td className="py-4 px-6">
                         {alreadyChecked ? (
@@ -730,9 +867,7 @@ export default function QualityCheckingPage() {
                             Review
                           </button>
                         ) : (
-                          <span className="text-xs text-gray-400 italic">
-                            Already reviewed
-                          </span>
+                          <span className="text-xs text-gray-400 italic">Already reviewed</span>
                         )}
                       </td>
                     </tr>
@@ -744,9 +879,7 @@ export default function QualityCheckingPage() {
               <div className="p-12 text-center text-gray-500">
                 <ShieldCheck className="w-12 h-12 mx-auto mb-3 opacity-30" />
                 <p className="font-medium">
-                  {filterPending
-                    ? "All test results have been quality checked!"
-                    : "No test results found"}
+                  {filterPending ? "All test results have been quality checked!" : "No test results found"}
                 </p>
               </div>
             )}
@@ -769,9 +902,7 @@ export default function QualityCheckingPage() {
         <div className="px-8 py-4 border-b border-gray-100 bg-gray-50">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Filter by Result
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Filter by Result</label>
               <select
                 value={filterQcResult}
                 onChange={(e) => setFilterQcResult(e.target.value)}
@@ -783,9 +914,7 @@ export default function QualityCheckingPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Search
-              </label>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Search</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
@@ -822,97 +951,59 @@ export default function QualityCheckingPage() {
                       className="border-b border-gray-100 hover:bg-[#F0F4F1] transition cursor-pointer"
                       onClick={() => setExpandedId(isExpanded ? null : qc.id)}
                     >
-                      <td className="py-4 px-6 font-medium text-gray-800">
-                        {qc.patient_name}
-                      </td>
+                      <td className="py-4 px-6 font-medium text-gray-800">{qc.patient_name}</td>
                       <td className="py-4 px-6 text-gray-700 text-sm">
                         <p className="font-medium">{qc.test_name}</p>
                         <p className="text-gray-400 text-xs">{qc.section}</p>
                       </td>
                       <td className="py-4 px-6 font-mono text-sm text-gray-700">
                         {qc.result_value}{" "}
-                        {qc.unit && (
-                          <span className="text-xs text-gray-400">{qc.unit}</span>
-                        )}
+                        {qc.unit && <span className="text-xs text-gray-400">{qc.unit}</span>}
                       </td>
                       <td className="py-4 px-6">
-                        <span
-                          className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit ${
-                            qc.qc_result === "pass"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-red-100 text-red-800"
-                          }`}
-                        >
-                          {qc.qc_result === "pass" ? (
-                            <ShieldCheck className="w-3 h-3" />
-                          ) : (
-                            <ShieldX className="w-3 h-3" />
-                          )}
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit ${
+                          qc.qc_result === "pass" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"
+                        }`}>
+                          {qc.qc_result === "pass"
+                            ? <ShieldCheck className="w-3 h-3" />
+                            : <ShieldX className="w-3 h-3" />}
                           {qc.qc_result.toUpperCase()}
                         </span>
                       </td>
-                      <td className="py-4 px-6 text-gray-600 text-sm">
-                        {qc.checked_by}
-                      </td>
-                      <td className="py-4 px-6 font-mono text-sm text-gray-600">
-                        {formatDateTime(qc.checked_at)}
-                      </td>
-                      <td
-                        className="py-4 px-6"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          onClick={() =>
-                            setExpandedId(isExpanded ? null : qc.id)
-                          }
-                          className="p-1 text-gray-400 hover:text-[#3B6255] transition"
-                        >
-                          {isExpanded ? (
-                            <ChevronUp className="w-4 h-4" />
-                          ) : (
-                            <ChevronDown className="w-4 h-4" />
-                          )}
-                        </button>
+                      <td className="py-4 px-6 text-gray-600 text-sm">{qc.checked_by}</td>
+                      <td className="py-4 px-6 font-mono text-sm text-gray-600">{formatDateTime(qc.checked_at)}</td>
+                      <td className="py-4 px-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setExpandedId(isExpanded ? null : qc.id)}
+                            className="p-1 text-gray-400 hover:text-[#3B6255] transition"
+                          >
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </button>
+                        </div>
                       </td>
                     </tr>
 
-                    {/* Expanded row */}
                     {isExpanded && (
-                      <tr
-                        className="bg-[#F8FBF9] border-b border-gray-200"
-                      >
+                      <tr className="bg-[#F8FBF9] border-b border-gray-200">
                         <td colSpan={7} className="px-8 py-5">
                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                             <div>
-                              <p className="text-xs font-bold text-gray-500 mb-1 uppercase">
-                                Reference Range
-                              </p>
+                              <p className="text-xs font-bold text-gray-500 mb-1 uppercase">Reference Range</p>
                               <p className="text-gray-800">
                                 {qc.reference_range || "—"}{" "}
-                                {qc.unit && (
-                                  <span className="text-gray-500">{qc.unit}</span>
-                                )}
+                                {qc.unit && <span className="text-gray-500">{qc.unit}</span>}
                               </p>
                             </div>
                             <div>
-                              <p className="text-xs font-bold text-gray-500 mb-1 uppercase">
-                                Comments / Findings
-                              </p>
+                              <p className="text-xs font-bold text-gray-500 mb-1 uppercase">Comments / Findings</p>
                               <p className="text-gray-800">
-                                {qc.comments || (
-                                  <span className="text-gray-400 italic">
-                                    No comments
-                                  </span>
-                                )}
+                                {qc.comments || <span className="text-gray-400 italic">No comments</span>}
                               </p>
                             </div>
                             <div>
-                              <p className="text-xs font-bold text-gray-500 mb-1 uppercase">
-                                Record Created
-                              </p>
-                              <p className="text-gray-800">
-                                {formatDateTime(qc.created_at)}
-                              </p>
+                              <p className="text-xs font-bold text-gray-500 mb-1 uppercase">Record Created</p>
+                              <p className="text-gray-800">{formatDateTime(qc.created_at)}</p>
                             </div>
                           </div>
                         </td>
@@ -939,10 +1030,10 @@ export default function QualityCheckingPage() {
           🔬 Quality Control Reminder
         </h3>
         <ul className="text-sm text-[#3B6255] space-y-1 list-disc list-inside">
-          <li>Quality Checking is done after Test Results and before Report Generation</li>
-          <li>Each test result must be individually reviewed and marked Pass or Fail</li>
-          <li>Failed results should include comments explaining the issue</li>
-          <li>Only results that have passed QC should proceed to Report Generation</li>
+          <li>QC result is automatically determined by the checklist — any failed item = FAIL overall</li>
+          <li>Failed results are blocked from Report Generation until corrected and re-checked</li>
+          <li>Comments are required when submitting a FAIL result</li>
+          <li>Only PASS results can proceed to Report Generation</li>
         </ul>
       </div>
     </div>

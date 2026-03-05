@@ -356,9 +356,6 @@ export default function TestRequestPage() {
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
   const [physician, setPhysician] = useState("");
   const [notes, setNotes] = useState("");
-  const [sampleDatetime, setSampleDatetime] = useState(
-    toLocalDatetimeValue(new Date())
-  );
   const [selectedSection, setSelectedSection] = useState(LAB_SECTIONS[0]);
   const [requestedTests, setRequestedTests] = useState<RequestedTest[]>([]);
 
@@ -461,7 +458,7 @@ export default function TestRequestPage() {
       patient_name: getPatientFullName(selectedPatient),
       requesting_physician: physician.trim(),
       requested_tests: requestedTests,
-      sample_collection_datetime: new Date(sampleDatetime).toISOString(),
+      sample_collection_datetime: new Date().toISOString(),
       status: "pending" as const,
       notes: notes.trim() || undefined,
       created_by: user?.full_name || user?.email || "Unknown",
@@ -498,7 +495,6 @@ export default function TestRequestPage() {
     setPatientSearch("");
     setPhysician("");
     setNotes("");
-    setSampleDatetime(toLocalDatetimeValue(new Date()));
     setRequestedTests([]);
     setSelectedSection(LAB_SECTIONS[0]);
     setSubmitError(null);
@@ -696,21 +692,6 @@ export default function TestRequestPage() {
                 value={physician}
                 onChange={(e) => setPhysician(e.target.value)}
                 placeholder="e.g. Dr. Juan Dela Cruz"
-                className={inputCls}
-              />
-            </div>
-
-            {/* Sample Collection Date & Time */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                <Calendar className="w-4 h-4 inline mr-1" />
-                Date & Time of Sample Collection{" "}
-                <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="datetime-local"
-                value={sampleDatetime}
-                onChange={(e) => setSampleDatetime(e.target.value)}
                 className={inputCls}
               />
             </div>
@@ -931,9 +912,6 @@ export default function TestRequestPage() {
                     Tests
                   </th>
                   <th className="text-left py-4 px-6 font-semibold text-gray-700">
-                    Sample Collection
-                  </th>
-                  <th className="text-left py-4 px-6 font-semibold text-gray-700">
                     Status
                   </th>
                   <th className="text-left py-4 px-6 font-semibold text-gray-700">
@@ -966,11 +944,6 @@ export default function TestRequestPage() {
                               ? "s"
                               : ""}
                           </span>
-                        </td>
-                        <td className="py-4 px-6 font-mono text-sm text-gray-600">
-                          {req.sample_collection_datetime
-                            ? formatDateTime(req.sample_collection_datetime)
-                            : "—"}
                         </td>
                         <td className="py-4 px-6">
                           <span
@@ -1057,7 +1030,7 @@ export default function TestRequestPage() {
                         <tr
                           className="bg-[#F8FBF9] border-b border-gray-200"
                         >
-                          <td colSpan={6} className="px-8 py-5">
+                          <td colSpan={5} className="px-8 py-5">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                               <div>
                                 <p className="text-xs font-bold text-gray-500 mb-3 uppercase tracking-wide">

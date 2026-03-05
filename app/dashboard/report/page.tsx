@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Eye, Printer } from "lucide-react";
 import { useReactToPrint } from "react-to-print";
 import { fetchTestResults, fetchPatients, fetchBilling } from "@/lib/database";
+import { supabase } from "@/lib/supabaseClient";
 
 const DROPDOWN_TESTS = [
   "ABO Blood Typing","Rh Typing","Crossmatching","Antibody Screening",
@@ -157,6 +158,7 @@ export default function PrintReportPage() {
   const [testResults, setTestResults] = useState<any[]>([]);
   const [patients, setPatients] = useState<any[]>([]);
   const [billings, setBillings] = useState<any[]>([]);
+  const [qualityChecks, setQualityChecks] = useState<any[]>([]);
   const [medtech1Id, setMedtech1Id] = useState<string>("");
   const [medtech2Id, setMedtech2Id] = useState<string>("");
   const [patientSearch, setPatientSearch] = useState<string>("");
@@ -172,6 +174,10 @@ export default function PrintReportPage() {
       setPatients(await fetchPatients());
       setTestResults(await fetchTestResults());
       setBillings(await fetchBilling());
+      const { data: qcData } = await supabase
+        .from("quality_checks")
+        .select("*");
+      setQualityChecks(qcData || []);
     })();
   }, []);
 
@@ -228,6 +234,38 @@ export default function PrintReportPage() {
   };
 
   const reportContentRef = useRef<HTMLDivElement>(null);
+  // ── QC eligibility: a patient is reportable only if ALL their test results
+  //    have a corresponding quality_check with qc_result === "pass"
+  const getPatientQCStatus = (patientId: string): "eligible" | "pending" | "failed" | "no_results" => {
+    const patient = patients.find((p) => p.id === patientId);
+    if (!patient) return "no_results";
+    const fullName = `${patient.first_name} ${patient.last_name}`;
+    const patientTestResults = testResults.filter((r) => r.patient_name === fullName);
+    if (patientTestResults.length === 0) return "no_results";
+
+    const qcMap: Record<string, string> = {};
+    for (const qc of qualityChecks) {
+      qcMap[qc.test_result_id] = qc.qc_result;
+    }
+
+    let hasFail = false;
+    let hasPending = false;
+    for (const r of patientTestResults) {
+      const qcResult = qcMap[r.id];
+      if (!qcResult) { hasPending = true; }
+      else if (qcResult === "fail") { hasFail = true; }
+    }
+    if (hasFail) return "failed";
+    if (hasPending) return "pending";
+    return "eligible";
+  };
+
+  // Only show patients who are QC-eligible in the dropdown
+  const eligiblePatients = patients.filter((p) => getPatientQCStatus(p.id) === "eligible");
+
+  // For the currently searched/selected patient, compute their QC status for feedback
+  const selectedQCStatus = selectedPatientId ? getPatientQCStatus(selectedPatientId) : null;
+
   const handlePrint = useReactToPrint({
     contentRef: reportContentRef,
     documentTitle: "CogniLab Laboratory Report",
@@ -279,41 +317,98 @@ export default function PrintReportPage() {
                   className="w-full px-4 py-2 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-[#3B6255] focus:border-[#3B6255] outline-none transition text-gray-800 font-medium bg-white"
                 />
                 {showPatientDropdown && patientSearch && (
-                  <div className="absolute z-10 w-full bg-white border-2 border-gray-300 rounded-xl shadow-lg mt-1 max-h-48 overflow-y-auto">
-                    {patients
-                      .filter((p) =>
-                        `${p.first_name} ${p.last_name}`.toLowerCase().includes(patientSearch.toLowerCase()) ||
-                        p.patient_id_no?.toLowerCase().includes(patientSearch.toLowerCase())
-                      )
-                      .map((p) => (
-                        <div
-                          key={p.id}
-                          onClick={() => {
-                            setSelectedPatientId(p.id);
-                            setPatientSearch(`${p.first_name} ${p.last_name}`);
-                            setShowPatientDropdown(false);
-                          }}
-                          className="px-4 py-2 hover:bg-[#F0F4F1] cursor-pointer text-gray-800 text-sm"
-                        >
-                          <span className="font-semibold">{p.first_name} {p.last_name}</span>
-                          <span className="text-gray-400 ml-2 text-xs">{p.patient_id_no}</span>
-                        </div>
-                      ))}
-                    {patients.filter((p) =>
-                      `${p.first_name} ${p.last_name}`.toLowerCase().includes(patientSearch.toLowerCase()) ||
-                      p.patient_id_no?.toLowerCase().includes(patientSearch.toLowerCase())
-                    ).length === 0 && (
-                      <div className="px-4 py-2 text-gray-400 text-sm">No patients found</div>
-                    )}
+                  <div className="absolute z-10 w-full bg-white border-2 border-gray-300 rounded-xl shadow-lg mt-1 max-h-64 overflow-y-auto">
+                    {(() => {
+                      const searchLower = patientSearch.toLowerCase();
+                      const matched = patients.filter((p) =>
+                        `${p.first_name} ${p.last_name}`.toLowerCase().includes(searchLower) ||
+                        p.patient_id_no?.toLowerCase().includes(searchLower)
+                      );
+                      const eligible = matched.filter((p) => getPatientQCStatus(p.id) === "eligible");
+                      const blocked  = matched.filter((p) => getPatientQCStatus(p.id) !== "eligible");
+
+                      return (
+                        <>
+                          {eligible.map((p) => (
+                            <div
+                              key={p.id}
+                              onClick={() => {
+                                setSelectedPatientId(p.id);
+                                setPatientSearch(`${p.first_name} ${p.last_name}`);
+                                setShowPatientDropdown(false);
+                              }}
+                              className="px-4 py-2.5 hover:bg-[#F0F4F1] cursor-pointer border-b border-gray-50 last:border-0"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-gray-800 text-sm">{p.first_name} {p.last_name}</span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700">✓ QC Passed</span>
+                              </div>
+                              <span className="text-gray-400 text-xs">{p.patient_id_no}</span>
+                            </div>
+                          ))}
+
+                          {blocked.length > 0 && (
+                            <>
+                              {eligible.length > 0 && (
+                                <div className="px-4 py-1.5 bg-gray-50 border-y border-gray-100">
+                                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">Not yet QC approved</p>
+                                </div>
+                              )}
+                              {blocked.map((p) => {
+                                const status = getPatientQCStatus(p.id);
+                                return (
+                                  <div key={p.id} className="px-4 py-2.5 bg-gray-50 cursor-not-allowed border-b border-gray-100 last:border-0 opacity-60">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-semibold text-gray-500 text-sm">{p.first_name} {p.last_name}</span>
+                                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                        status === "failed"
+                                          ? "bg-red-100 text-red-600"
+                                          : status === "pending"
+                                          ? "bg-yellow-100 text-yellow-600"
+                                          : "bg-gray-100 text-gray-500"
+                                      }`}>
+                                        {status === "failed" ? "✕ QC Failed" : status === "pending" ? "⏳ QC Pending" : "No Results"}
+                                      </span>
+                                    </div>
+                                    <span className="text-gray-400 text-xs">{p.patient_id_no}</span>
+                                  </div>
+                                );
+                              })}
+                            </>
+                          )}
+
+                          {matched.length === 0 && (
+                            <div className="px-4 py-3 text-gray-400 text-sm">No patients found</div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
+
+              {/* QC block message below the input */}
+              {selectedPatientId && selectedQCStatus !== "eligible" && (
+                <div className={`mt-2 flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs font-medium ${
+                  selectedQCStatus === "failed"
+                    ? "bg-red-50 border border-red-200 text-red-700"
+                    : selectedQCStatus === "pending"
+                    ? "bg-yellow-50 border border-yellow-200 text-yellow-700"
+                    : "bg-gray-50 border border-gray-200 text-gray-500"
+                }`}>
+                  {selectedQCStatus === "failed"
+                    ? "⛔ This patient has failed QC checks. Results must be corrected and re-checked before a report can be generated."
+                    : selectedQCStatus === "pending"
+                    ? "⏳ This patient's test results have not been fully reviewed in Quality Checking yet."
+                    : "ℹ️ No test results found for this patient."}
+                </div>
+              )}
             </div>
 
             <button
               onClick={togglePreview}
-              disabled={!selectedPatientId}
-              className="w-full px-8 py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:shadow-2xl hover:scale-105 transition-all duration-200 font-bold text-lg flex items-center justify-center gap-3 border border-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!selectedPatientId || selectedQCStatus !== "eligible"}
+              className="w-full px-8 py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 text-white rounded-xl hover:shadow-2xl hover:scale-105 transition-all duration-200 font-bold text-lg flex items-center justify-center gap-3 border border-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:hover:shadow-none"
             >
               {showPreview ? "✕ Close Preview" : <><Eye className="w-6 h-6" /> Preview Report</>}
             </button>
