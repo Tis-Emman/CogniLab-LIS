@@ -113,6 +113,11 @@ export default function PatientsPage() {
   const [trError, setTrError] = useState<string | null>(null);
   const [trSuccess, setTrSuccess] = useState(false);
 
+  // ── Lab History State ────────────────────────────────────────────────────
+  const [labHistory, setLabHistory] = useState<any[]>([]);
+  const [labHistoryLoading, setLabHistoryLoading] = useState(false);
+  const [labHistoryTab, setLabHistoryTab] = useState<"all" | string>("all");
+
   const [formData, setFormData] = useState({
   patient_id_no: "", // ← empty, generated when button is clicked
   last_name: "",
@@ -422,6 +427,32 @@ export default function PatientsPage() {
     setTrPatient(null);
     setTrSuccess(false);
     setTrError(null);
+  };
+
+  // ── Fetch Lab History for a patient ──────────────────────────────────────
+  const fetchLabHistory = async (patient: Patient) => {
+    setLabHistoryLoading(true);
+    setLabHistory([]);
+    setLabHistoryTab("all");
+    try {
+      if (USE_MOCK_DATA) {
+        // Filter mock test requests by patient id
+        const mock = MOCK_TEST_REQUESTS.filter((r: any) => r.patient_id === patient.id);
+        setLabHistory(mock);
+      } else {
+        const { data, error } = await supabase
+          .from("test_requests")
+          .select("*")
+          .eq("patient_id", patient.id)
+          .order("created_at", { ascending: false });
+        if (error) throw error;
+        setLabHistory(data || []);
+      }
+    } catch (e) {
+      setLabHistory([]);
+    } finally {
+      setLabHistoryLoading(false);
+    }
   };
   const handleDelete = async () => {
     if (!patientToDelete) return;
@@ -1006,6 +1037,7 @@ export default function PatientsPage() {
                           onClick={() => {
                             setSelectedPatient(patient);
                             setShowDetailsModal(true);
+                            fetchLabHistory(patient);
                           }}
                           className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-sm flex items-center gap-1 hover:underline transition"
                         >
@@ -1060,6 +1092,7 @@ export default function PatientsPage() {
                 onClick={() => {
                   setShowDetailsModal(false);
                   setSelectedPatient(null);
+                  setLabHistory([]);
                 }}
                 className="hover:bg-white hover:bg-opacity-20 p-2 rounded-lg transition"
               >
@@ -1206,6 +1239,109 @@ export default function PatientsPage() {
                 </div>
               </div>
 
+              {/* Lab History */}
+              <div className="bg-teal-50 p-6 rounded-lg border border-teal-200">
+                <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <FlaskConical className="w-5 h-5 text-[#3B6255]" />
+                  Lab History
+                </h4>
+
+                {labHistoryLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader className="w-6 h-6 text-[#3B6255] animate-spin mr-2" />
+                    <span className="text-gray-500 text-sm">Loading lab history...</span>
+                  </div>
+                ) : labHistory.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">
+                    <FlaskConical className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">No lab results on record yet.</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Section filter tabs */}
+                    {(() => {
+                      const allSections = Array.from(
+                        new Set(
+                          labHistory.flatMap((r: any) =>
+                            (r.requested_tests || []).map((t: any) => t.section)
+                          )
+                        )
+                      ) as string[];
+                      return (
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          <button
+                            onClick={() => setLabHistoryTab("all")}
+                            className={`px-3 py-1 rounded-full text-xs font-semibold transition ${labHistoryTab === "all" ? "bg-[#3B6255] text-white" : "bg-white text-gray-600 border border-gray-300 hover:border-[#3B6255]"}`}
+                          >
+                            All
+                          </button>
+                          {allSections.map((sec) => (
+                            <button
+                              key={sec}
+                              onClick={() => setLabHistoryTab(sec)}
+                              className={`px-3 py-1 rounded-full text-xs font-semibold transition ${labHistoryTab === sec ? "bg-[#3B6255] text-white" : "bg-white text-gray-600 border border-gray-300 hover:border-[#3B6255]"}`}
+                            >
+                              {sec}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Test request cards */}
+                    <div className="space-y-3 max-h-64 overflow-y-auto pr-1">
+                      {labHistory.map((req: any) => {
+                        const filteredTests = (req.requested_tests || []).filter(
+                          (t: any) => labHistoryTab === "all" || t.section === labHistoryTab
+                        );
+                        if (filteredTests.length === 0) return null;
+                        return (
+                          <div key={req.id} className="bg-white rounded-lg border border-teal-100 p-4 shadow-sm">
+                            <div className="flex items-start justify-between mb-2">
+                              <div>
+                                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                  {req.requesting_physician || "—"}
+                                </p>
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                  {req.sample_collection_datetime
+                                    ? new Date(req.sample_collection_datetime).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+                                    : req.created_at
+                                    ? new Date(req.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+                                    : "—"}
+                                </p>
+                              </div>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                                req.status === "completed"
+                                  ? "bg-green-100 text-green-700"
+                                  : req.status === "in_progress"
+                                  ? "bg-blue-100 text-blue-700"
+                                  : "bg-yellow-100 text-yellow-700"
+                              }`}>
+                                {req.status === "completed" ? "✓ Completed" : req.status === "in_progress" ? "In Progress" : "Pending"}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {filteredTests.map((t: any, i: number) => (
+                                <span key={i} className="px-2 py-0.5 bg-teal-50 border border-teal-200 text-teal-800 rounded text-xs font-medium">
+                                  {t.test_name}
+                                </span>
+                              ))}
+                            </div>
+                            {req.notes && (
+                              <p className="text-xs text-gray-400 mt-2 italic">Note: {req.notes}</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <p className="text-xs text-gray-400 mt-3 text-right">
+                      {labHistory.length} request{labHistory.length !== 1 ? "s" : ""} found
+                    </p>
+                  </>
+                )}
+              </div>
+
               {/* Registration Info */}
               <div className="bg-gray-50 p-6 rounded-lg border border-gray-200">
                 <h4 className="text-lg font-bold text-gray-800 mb-4">
@@ -1254,6 +1390,7 @@ export default function PatientsPage() {
                 onClick={() => {
                   setShowDetailsModal(false);
                   setSelectedPatient(null);
+                  setLabHistory([]);
                 }}
                 className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition font-semibold"
               >
