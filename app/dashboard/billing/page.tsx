@@ -68,7 +68,31 @@ export default function BillingPage() {
       }
     `;
     document.head.appendChild(style);
-    return () => {
+    const handleGenerateReport = () => {
+    const filtered = billings.filter((billing) => {
+      if (paymentFilter !== 'all') {
+        const status = billing.status || billing.paymentStatus;
+        if (paymentFilter === 'paid' && status !== 'paid') return false;
+        if (paymentFilter === 'unpaid' && status === 'paid') return false;
+      }
+      if (searchTerm) {
+        const s = searchTerm.toLowerCase();
+        const pName = (billing.patient_name || billing.patientName || '').toLowerCase();
+        const tName = (billing.test_name || billing.testName || '').toLowerCase();
+        if (!pName.includes(s) && !tName.includes(s)) return false;
+      }
+      return true;
+    });
+    const paidTotal = filtered.filter(b => (b.status || b.paymentStatus) === 'paid').reduce((sum, b) => sum + b.amount, 0);
+    const unpaidTotal = filtered.filter(b => (b.status || b.paymentStatus) !== 'paid').reduce((sum, b) => sum + b.amount, 0);
+    const rows = filtered.map(b => `<tr style="border-bottom:1px solid #eee"><td style="padding:8px 12px">${b.patient_name || b.patientName || ''}</td><td style="padding:8px 12px">${b.test_name || b.testName || ''}</td><td style="padding:8px 12px">₱${b.amount.toFixed(2)}</td><td style="padding:8px 12px;color:${(b.status||b.paymentStatus)==='paid'?'green':'orange'};font-weight:bold">${(b.status||b.paymentStatus)==='paid'?'✓ Paid':'⏳ Unpaid'}</td><td style="padding:8px 12px">${b.date_paid||b.datePaid||'—'}</td><td style="padding:8px 12px;font-family:monospace">${b.or_number||b.orNumber||'—'}</td></tr>`).join('');
+    const win = window.open('','_blank');
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><title>Billing Report</title><style>body{font-family:Arial,sans-serif;padding:40px;color:#000}table{width:100%;border-collapse:collapse;font-size:13px;margin-top:20px}th{background:#3B6255;color:white;padding:10px 12px;text-align:left}tr:nth-child(even){background:#f9f9f9}.summary{margin-top:24px;padding-top:16px;border-top:2px solid #3B6255;font-size:13px;display:flex;gap:40px}</style></head><body><div style="text-align:center;border-bottom:2px solid #3B6255;padding-bottom:16px;margin-bottom:20px"><h1 style="margin:0 0 4px 0">Billing Report</h1><p style="margin:0;font-size:12px;color:#666">Generated: ${new Date().toLocaleString()}</p></div><table><thead><tr><th>Patient Name</th><th>Test Name</th><th>Amount</th><th>Status</th><th>Date Paid</th><th>OR Number</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><div><b>Total Records:</b> ${filtered.length}</div><div style="color:green"><b>Total Paid:</b> ₱${paidTotal.toFixed(2)}</div><div style="color:orange"><b>Total Unpaid:</b> ₱${unpaidTotal.toFixed(2)}</div></div><script>window.onload=()=>window.print()<\/script></body></html>`);
+    win.document.close();
+  };
+
+  return () => {
       document.head.removeChild(style);
     };
   }, []);
@@ -116,10 +140,6 @@ export default function BillingPage() {
     }
   };
 
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedBilling, setSelectedBilling] = useState<BillingRecord | null>(null);
-  const [paymentData, setPaymentData] = useState({ orNumber: '', datePaid: '' });
-
   const totalRevenue = billings
     .filter((b) => (b.status || b.paymentStatus) === 'paid')
     .reduce((sum, b) => sum + b.amount, 0);
@@ -131,43 +151,9 @@ export default function BillingPage() {
   const paidCount = billings.filter((b) => (b.status || b.paymentStatus) === 'paid').length;
   const unpaidCount = billings.filter((b) => (b.status || b.paymentStatus) === 'unpaid').length;
 
-  const handleRecordPayment = () => {
-    if (!selectedBilling || !paymentData.orNumber || !paymentData.datePaid) {
-      alert('Please fill in all fields');
-      return;
-    }
-
-    setBillings(
-      billings.map((b) =>
-        b.id === selectedBilling.id
-          ? {
-              ...b,
-              paymentStatus: 'paid',
-              datePaid: paymentData.datePaid,
-              orNumber: paymentData.orNumber,
-            }
-          : b
-      )
-    );
-
-    setShowPaymentModal(false);
-    setSelectedBilling(null);
-    setPaymentData({ orNumber: '', datePaid: '' });
-  };
-
-  const handleMarkUnpaid = (billing: BillingRecord) => {
-    setBillings(
-      billings.map((b) =>
-        b.id === billing.id
-          ? {
-              ...b,
-              paymentStatus: 'unpaid',
-              datePaid: undefined,
-              orNumber: undefined,
-            }
-          : b
-      )
-    );
+  const handleMarkUnpaid = async (billing: BillingRecord) => {
+    await updateBillingStatus(billing.id as string, 'unpaid', user);
+    await loadBilling();
   };
 
   return (
@@ -384,7 +370,7 @@ export default function BillingPage() {
                     ) : (
                       <>
                         <button
-                          onClick={() => handlePaymentStatusChange(billing.id as string, 'unpaid')}
+                          onClick={() => handleMarkUnpaid(billing)}
                           className="text-orange-600 hover:text-orange-800 font-semibold text-sm"
                           title="Mark as Unpaid"
                         >
@@ -407,75 +393,7 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {/* Payment Modal */}
-      {showPaymentModal && selectedBilling && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl p-8 max-w-md w-full">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Record Payment</h2>
 
-            <div className="space-y-4 mb-6">
-              <div>
-                <p className="text-sm text-gray-600">Patient</p>
-                <p className="font-semibold text-gray-800">{selectedBilling.patientName}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Test</p>
-                <p className="font-semibold text-gray-800">{selectedBilling.testName}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Amount</p>
-                <p className="text-3xl font-bold text-[#3B6255]">₱{selectedBilling.amount}</p>
-              </div>
-            </div>
-
-            <div className="space-y-4 mb-6 border-t border-gray-200 pt-6">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  OR Number <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={paymentData.orNumber}
-                  onChange={(e) => setPaymentData({ ...paymentData, orNumber: e.target.value })}
-                  placeholder="e.g., OR-2024-001"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Date Paid <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={paymentData.datePaid}
-                  onChange={(e) => setPaymentData({ ...paymentData, datePaid: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-4">
-              <button
-                onClick={handleRecordPayment}
-                className="flex-1 px-6 py-3 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold"
-              >
-                ✓ Confirm Payment
-              </button>
-              <button
-                onClick={() => {
-                  setShowPaymentModal(false);
-                  setSelectedBilling(null);
-                  setPaymentData({ orNumber: '', datePaid: '' });
-                }}
-                className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-semibold"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

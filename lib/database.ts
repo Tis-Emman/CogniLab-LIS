@@ -664,12 +664,12 @@ export const addBilling = async (billing: {
   return data?.[0] || null;
 };
 
-export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid', currentUser?: any) => {
+export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid', currentUser?: any, extraFields?: { or_number?: string; date_paid?: string }) => {
   if (USE_MOCK_DATA) {
     const index = MOCK_BILLING.findIndex(b => b.id === id);
     if (index !== -1) {
       const oldStatus = MOCK_BILLING[index].status;
-      MOCK_BILLING[index] = { ...MOCK_BILLING[index], status, updated_at: new Date().toISOString() };
+      MOCK_BILLING[index] = { ...MOCK_BILLING[index], status, ...(extraFields || {}), updated_at: new Date().toISOString() };
       await logActivity({
         user_id: currentUser?.id,
         user_name: currentUser?.full_name || 'Unknown User',
@@ -692,7 +692,7 @@ export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid',
 
   const { data, error } = await supabase
     .from('billing')
-    .update({ status, updated_at: new Date().toISOString() })
+    .update({ status, ...(extraFields || {}), updated_at: new Date().toISOString() })
     .eq('id', id)
     .select();
   
