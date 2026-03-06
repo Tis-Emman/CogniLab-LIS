@@ -329,6 +329,7 @@ export default function PatientsPage() {
         },
         user,
       );
+      const newPatientIdNo = formData.patient_id_no; // capture before reset
       await loadPatients();
       setFormData({
         patient_id_no: "",
@@ -353,10 +354,12 @@ export default function PatientsPage() {
       setShowForm(false);
 
       // Open Test Request popup for the newly registered patient
-      const saved = patients[patients.length - 1] ?? null;
-      // Use the refreshed list — loadPatients was called above
       const refreshed = await fetchPatients();
-      const newPat = refreshed[0] ?? null; // most recent patient
+      // Find the newly registered patient by their captured ID
+      const newPat =
+        refreshed.find((p: Patient) => p.patient_id_no === newPatientIdNo) ??
+        refreshed[0] ??
+        null;
       setTrPatient(newPat);
       setTrDatetime(toLocalDatetimeValue(new Date()));
       setTrTests([]);
@@ -367,13 +370,23 @@ export default function PatientsPage() {
       setTrSuccess(false);
       setShowTRPopup(true);
     } catch (error: any) {
-      if (error?.message === "Patient ID already exists") {
+      const msg: string = error?.message || "";
+      if (msg.includes("Patient ID already exists") || msg.includes("patient_id_no")) {
         setErrors((prev) => ({
           ...prev,
           patient_id_no: "Patient ID already exists",
         }));
+      } else if (msg.includes("duplicate") || msg.includes("unique")) {
+        setErrors((prev) => ({
+          ...prev,
+          patient_id_no: "A patient with this ID already exists",
+        }));
       } else {
         console.error("Error adding patient:", error);
+        setErrors((prev) => ({
+          ...prev,
+          submit: msg || "Failed to save patient. Please try again.",
+        }));
       }
     } finally {
       setSubmitting(false);

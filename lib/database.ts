@@ -282,7 +282,7 @@ export const addPatient = async (patient: any, currentUser?: any) => {
   
   if (error) {
     console.error('Error adding patient:', error);
-    return null;
+    throw new Error(error.message || 'Failed to add patient');
   }
 
   if (data?.[0]) {
