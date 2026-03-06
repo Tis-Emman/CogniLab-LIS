@@ -322,6 +322,7 @@ export default function PatientsPage() {
           medical_history: formData.medical_history,
           medications: formData.medications,
           allergy: formData.allergy,
+          demographics_complete: true,
         },
         user,
       );
