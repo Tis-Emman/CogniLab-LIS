@@ -53,6 +53,7 @@ interface Patient {
   age: number;
   birthdate: string;
   sex: string;
+  civil_status?: string;
   contact_no: string;
   address_house_no?: string;
   address_street?: string;
@@ -126,6 +127,7 @@ export default function PatientsPage() {
   age: "",
   birthdate: "",
   sex: "Male",
+  civil_status: "Single",
   contact_no: "",
   address_house_no: "",
   address_street: "",
@@ -313,6 +315,7 @@ export default function PatientsPage() {
           age: parseInt(formData.age),
           birthdate: formData.birthdate,
           sex: formData.sex,
+          civil_status: formData.civil_status || "Single",
           contact_no: normalized,
           address_house_no: formData.address_house_no || null,
           address_street: formData.address_street || null,
@@ -335,6 +338,7 @@ export default function PatientsPage() {
         age: "",
         birthdate: "",
         sex: "Male",
+        civil_status: "Single",
         contact_no: "",
         address_house_no: "",
         address_street: "",
@@ -693,6 +697,28 @@ export default function PatientsPage() {
                   error={errors.contact_no}
                   className="mb-0"
                 />
+              </div>
+            </div>
+
+            {/* Civil Status */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Civil Status <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={formData.civil_status || "Single"}
+                  onChange={(e) =>
+                    setFormData({ ...formData, civil_status: e.target.value })
+                  }
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white"
+                >
+                  <option>Single</option>
+                  <option>Married</option>
+                  <option>Widowed</option>
+                  <option>Separated</option>
+                  <option>Divorced</option>
+                </select>
               </div>
             </div>
 
@@ -1144,6 +1170,14 @@ export default function PatientsPage() {
                     </label>
                     <p className="text-base font-semibold text-gray-800 mt-1">
                       {selectedPatient.sex}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 uppercase">
+                      Civil Status
+                    </label>
+                    <p className="text-base font-semibold text-gray-800 mt-1">
+                      {selectedPatient.civil_status || "—"}
                     </p>
                   </div>
                   <div>
