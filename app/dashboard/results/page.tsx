@@ -945,7 +945,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
       } else if (selectedTest === "RBC Indices (MCV, MCH, RDW)") {
         const components = [
           { name: "MCV", value: rbcValues.mcv, range: "80 - 100", unit: "fL" },
@@ -982,6 +982,7 @@ export default function TestResultsPage() {
                 unit: c.unit,
               },
               user,
+              true, // skipBilling — billing is owned by Test Request, never Test Result
             );
         }
       } else if (selectedTest === "Hemoglobin") {
@@ -999,7 +1000,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
       } else if (selectedTest === "PT/INR, PTT") {
         const coagLines = [
           `PT: ${coagulationValues.pt} seconds`,
@@ -1016,7 +1017,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
 
         // ── FIXED: Routine Urinalysis — single record ─────────────────────────
       } else if (selectedTest === "Routine Urinalysis (UA)") {
@@ -1041,7 +1042,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
 
         // ── FIXED: Culture and Sensitivity — single record ────────────────────
       } else if (selectedTest === "Culture and Sensitivity") {
@@ -1061,7 +1062,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
 
         // ── Clinical Chemistry grouped tests ───────────────────────────────
       } else if (selectedTest === "Culture and Sensitivity") {
@@ -1081,7 +1082,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
 
         // ── ADD THIS ────────────────────────────────────────────────────────
       } else if (selectedTest === "Routine Fecalysis (FA)") {
@@ -1104,7 +1105,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
       } else if (selectedTest === "Lipid Profile") {
         const sub = LIPID_PROFILE_TESTS.find((t) => t.name === lipidSubTest)!;
         const payload = {
@@ -1117,7 +1118,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
       } else if (selectedTest === "Liver Function Test") {
         const sub = LIVER_FUNCTION_TESTS.find((t) => t.name === lftSubTest)!;
         const payload = {
@@ -1130,7 +1131,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
       } else if (selectedTest === "Renal Function Test") {
         const sub = RENAL_FUNCTION_TESTS.find((t) => t.name === rftSubTest)!;
         const payload = {
@@ -1143,7 +1144,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
       } else if (selectedTest === "Glucose & Diabetes Monitoring") {
         const sub = GLUCOSE_TESTS.find((t) => t.name === glucoseSubTest)!;
         const payload = {
@@ -1156,7 +1157,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
       } else if (selectedTest === "Electrolytes") {
         const resultString = [
           `Sodium (Na+): ${electrolytesValues.sodium} mmol/L`,
@@ -1177,7 +1178,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
       } else if (selectedTest === "Arterial Blood Gas") {
         const resultString = [
           `pH: ${abgValues.pH}`,
@@ -1196,7 +1197,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
       } else {
         const payload = {
           patient_name: patientName,
@@ -1208,7 +1209,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user)
-          : await addTestResult(payload, user);
+          : await addTestResult(payload, user, true);
       }
 
       await loadResults();

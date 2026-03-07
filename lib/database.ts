@@ -4,6 +4,26 @@ import { MOCK_USERS, MOCK_PATIENTS, MOCK_TEST_RESULTS, MOCK_BILLING, MOCK_AUDIT_
 const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// RETRY UTILITY
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_RETRIES = 3;
+
+async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promise<T> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const result = await fn();
+      return result;
+    } catch (err) {
+      if (attempt === retries) throw err;
+      // Refresh session before retrying in case token expired
+      await supabase.auth.getSession();
+    }
+  }
+  throw new Error('Max retries reached');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ABNORMAL STATUS LOGIC
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -164,16 +184,17 @@ export const fetchUsers = async () => {
     return MOCK_USERS;
   }
   
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .order('created_at', { ascending: false });
-  
-  if (error) {
-    console.error('Error fetching users:', error);
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }).catch((err) => {
+    console.error('Error fetching users after retries:', err);
     return [];
-  }
-  return data || [];
+  });
 };
 
 export const addUser = async (user: {
@@ -241,16 +262,17 @@ export const fetchPatients = async () => {
     return MOCK_PATIENTS;
   }
   
-  const { data, error } = await supabase
-    .from('patients')
-    .select('*')
-    .order('date_registered', { ascending: false });
-  
-  if (error) {
-    console.error('Error fetching patients:', error);
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('patients')
+      .select('*')
+      .order('date_registered', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }).catch((err) => {
+    console.error('Error fetching patients after retries:', err);
     return [];
-  }
-  return data || [];
+  });
 };
 
 export const addPatient = async (patient: any, currentUser?: any) => {
@@ -394,16 +416,17 @@ export const fetchTestResults = async () => {
     return MOCK_TEST_RESULTS;
   }
   
-  const { data, error } = await supabase
-    .from('test_results')
-    .select('*')
-    .order('date_created', { ascending: false });
-  
-  if (error) {
-    console.error('Error fetching test results:', error);
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('test_results')
+      .select('*')
+      .order('date_created', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }).catch((err) => {
+    console.error('Error fetching test results after retries:', err);
     return [];
-  }
-  return data || [];
+  });
 };
 
 const BILLING_PARENT_TESTS: Record<string, string[]> = {
@@ -430,7 +453,16 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
     MOCK_TEST_RESULTS.push(newResult);
 
     const isComponent = BILLING_PARENT_TESTS[result.section]?.includes(result.test_name);
-    if (skipBilling || isComponent) {
+    const billingTestName = isComponent
+      ? (BILLING_PARENT_NAMES[result.section] || result.test_name)
+      : result.test_name;
+
+    // Guard: never create a duplicate billing record
+    const existingBilling = MOCK_BILLING.find(
+      b => b.patient_name === result.patient_name && b.test_name === billingTestName
+    );
+
+    if (skipBilling || isComponent || existingBilling) {
       await logActivity({
         user_id: currentUser?.id,
         user_name: currentUser?.full_name || 'Unknown User',
@@ -438,7 +470,7 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
         action: 'edit',
         resource: `${result.test_name} - ${result.patient_name}`,
         resource_type: 'Test Result',
-        description: `Created test result: ${result.test_name} for patient ${result.patient_name} in section ${result.section}${isComponent ? ' (component of ' + (BILLING_PARENT_NAMES[result.section] || 'parent test') + ')' : ''}`,
+        description: `Created test result: ${result.test_name} for patient ${result.patient_name} in section ${result.section}${isComponent ? ' (component of ' + (BILLING_PARENT_NAMES[result.section] || 'parent test') + ')' : existingBilling ? ' (billing already exists — skipped)' : ''}`,
       });
       return newResult;
     }
@@ -484,9 +516,21 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
 
   if (data?.[0]) {
     const isComponent = BILLING_PARENT_TESTS[result.section]?.includes(result.test_name);
+    const billingTestName = isComponent
+      ? (BILLING_PARENT_NAMES[result.section] || result.test_name)
+      : result.test_name;
+
+    // Guard: never create a duplicate billing record
+    const { data: existingBilling } = await supabase
+      .from('billing')
+      .select('id')
+      .eq('patient_name', result.patient_name)
+      .eq('test_name', billingTestName)
+      .maybeSingle();
+
     const testCost = TEST_PRICING[result.section]?.[result.test_name] || 300;
 
-    if (!skipBilling && !isComponent) {
+    if (!skipBilling && !isComponent && !existingBilling) {
       const { error: billingError } = await supabase
         .from('billing')
         .insert([{
@@ -607,16 +651,17 @@ export const fetchBilling = async () => {
     return MOCK_BILLING;
   }
   
-  const { data, error } = await supabase
-    .from('billing')
-    .select('*')
-    .order('date_created', { ascending: false });
-  
-  if (error) {
-    console.error('Error fetching billing:', error);
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('billing')
+      .select('*')
+      .order('date_created', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }).catch((err) => {
+    console.error('Error fetching billing after retries:', err);
     return [];
-  }
-  return data || [];
+  });
 };
 
 export const addBilling = async (billing: {
@@ -748,16 +793,17 @@ export const fetchAuditLogs = async () => {
     return MOCK_AUDIT_LOGS;
   }
   
-  const { data, error } = await supabase
-    .from('audit_logs')
-    .select('*')
-    .order('created_at', { ascending: false });
-  
-  if (error) {
-    console.error('Error fetching audit logs:', error);
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }).catch((err) => {
+    console.error('Error fetching audit logs after retries:', err);
     return [];
-  }
-  return data || [];
+  });
 };
 
 export const logActivity = async (log: {
@@ -811,7 +857,13 @@ export const subscribeToAuditLogs = (callback: (log: any) => void) => {
       { event: 'INSERT', schema: 'public', table: 'audit_logs' },
       (payload) => { callback(payload.new); }
     )
-    .subscribe();
+    .subscribe(async (status) => {
+      // When the channel reconnects after being idle/dropped,
+      // re-hydrate the session so all subsequent queries have a valid token
+      if (status === 'SUBSCRIBED') {
+        await supabase.auth.getSession();
+      }
+    });
 
   return () => { supabase.removeChannel(channel); };
 };
