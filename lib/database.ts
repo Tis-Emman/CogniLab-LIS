@@ -1,0 +1,919 @@
+import { supabase } from './supabaseClient';
+import { MOCK_USERS, MOCK_PATIENTS, MOCK_TEST_RESULTS, MOCK_BILLING, MOCK_AUDIT_LOGS, TEST_PRICING, TEST_REFERENCE_RANGES } from './mockData';
+
+const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RETRY UTILITY
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MAX_RETRIES = 3;
+
+async function withRetry<T>(fn: () => Promise<T>, retries = MAX_RETRIES): Promise<T> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const result = await fn();
+      return result;
+    } catch (err) {
+      if (attempt === retries) throw err;
+      // Refresh session before retrying in case token expired
+      await supabase.auth.getSession();
+    }
+  }
+  throw new Error('Max retries reached');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ABNORMAL STATUS LOGIC
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type AbnormalStatus = "normal" | "low" | "high" | "alert-low" | "alert-high";
+
+// Flat reference ranges for all tests (single numeric value)
+const FLAT_RANGES: Record<string, { min?: number; max?: number }> = {
+  // HEMATOLOGY
+  Neutrophils:             { min: 45,   max: 75 },
+  Lymphocytes:             { min: 16,   max: 46 },
+  Monocytes:               { min: 4,    max: 11 },
+  Eosinophils:             { min: 0,    max: 8 },
+  Basophils:               { min: 0,    max: 3 },
+  "WBC Count":             { min: 5.0,  max: 10.0 },
+  MCV:                     { min: 80,   max: 100 },
+  MCH:                     { min: 27,   max: 31 },
+  RDW:                     { min: 11.5, max: 14.5 },
+  "Hemoglobin (Male)":     { min: 14.0, max: 17.0 },
+  "Hemoglobin (Female)":   { min: 12.0, max: 15.0 },
+  "Hematocrit (Male)":     { min: 40,   max: 54 },
+  "Hematocrit (Female)":   { min: 37,   max: 47 },
+  "Platelet Count":        { min: 150,  max: 450 },
+  PT:                      { min: 11.0, max: 13.5 },
+  INR:                     { min: 0.8,  max: 1.2 },
+  aPTT:                    { min: 25.0, max: 35.0 },
+  "ESR (Male)":            { min: 0,    max: 15 },
+  "ESR (Female)":          { min: 0,    max: 15 },
+  ESR:                     { min: 0,    max: 15 },
+  // IMMUNOLOGY/SEROLOGY
+  "HBsAg (Hepa B Surface Ag) - Quantitative": { max: 1.0 },
+  "Anti-HBs (Quantitative)":                  { min: 10 },
+  "Anti-HCV (Quantitative)":                  { max: 1.0 },
+  "Anti-HIV 1 & 2 (Quantitative)":            { max: 1.0 },
+  "Anti-Streptolysin O (ASO) - Adult":        { max: 200 },
+  "Anti-Streptolysin O (ASO) - Child":        { max: 150 },
+  C3:                                          { min: 80,   max: 160 },
+  "C-Reactive Protein (CRP)":                 { min: 0,    max: 10 },
+  "Rheumatoid Factor (RF)":                   { max: 14 },
+  // CLINICAL CHEMISTRY - Glucose
+  "Random Blood Sugar (RBS)":                 { max: 140 },
+  "Fasting Blood Sugar (FBS)":                { min: 70,   max: 110 },
+  "Oral Glucose Tolerance Test (OGTT) 100g":  { max: 140 },
+  "Oral Glucose Tolerance Test (OGTT) 75g":   { max: 140 },
+  "Oral Glucose Challenge Test (OGCT) 50g":   { max: 140 },
+  "Hemoglobin A1c (HBA1c)":                   { max: 5.7 },
+  // CLINICAL CHEMISTRY - Lipid
+  "Total Cholesterol":                        { max: 200 },
+  Triglycerides:                              { min: 40,   max: 150 },
+  HDL:                                        { min: 60 },
+  LDL:                                        { max: 100 },
+  // CLINICAL CHEMISTRY - Electrolytes
+  "Sodium (Na+)":                             { min: 135,  max: 145 },
+  "Potassium (K+)":                           { min: 3.4,  max: 5.0 },
+  "Chloride (Cl-)":                           { min: 95,   max: 108 },
+  Bicarbonate:                                { min: 22,   max: 28 },
+  "Calcium – Total (Ca++)":                   { min: 8.5,  max: 10.5 },
+  Phosphorus:                                 { min: 3.0,  max: 4.5 },
+  "Magnesium (Mg++)":                         { min: 1.8,  max: 3.0 },
+  // CLINICAL CHEMISTRY - LFT
+  "Total Bilirubin":                          { min: 0.0,  max: 1.0 },
+  "Direct Bilirubin":                         { min: 0.0,  max: 0.4 },
+  "Indirect Bilirubin":                       { min: 0.2,  max: 0.8 },
+  "SGOT / AST (Female)":                      { min: 9,    max: 25 },
+  "SGOT / AST (Male)":                        { min: 10,   max: 40 },
+  "SGPT / ALT (Female)":                      { min: 7,    max: 30 },
+  "SGPT / ALT (Male)":                        { min: 10,   max: 55 },
+  "Total Protein":                            { min: 6.4,  max: 8.3 },
+  "Albumin (Adults)":                         { min: 3.5,  max: 5.0 },
+  "Albumin (Children)":                       { min: 3.4,  max: 4.2 },
+  "Alkaline Phosphatase ALP (Female)":        { min: 30,   max: 100 },
+  "Alkaline Phosphatase ALP (Male)":          { min: 45,   max: 115 },
+  // CLINICAL CHEMISTRY - RFT
+  "Blood Urea Nitrogen (BUN)":                { min: 8,    max: 23 },
+  "Blood Uric Acid (BUA)":                    { min: 4,    max: 8 },
+  "Creatinine (Male)":                        { min: 0.7,  max: 1.3 },
+  "Creatinine (Female)":                      { min: 0.6,  max: 1.1 },
+  // CLINICAL CHEMISTRY - Others
+  Ammonia:                                    { min: 15,   max: 45 },
+  Amylase:                                    { min: 53,   max: 123 },
+  Lipase:                                     { min: 31,   max: 186 },
+  "CK (Female)":                              { min: 40,   max: 150 },
+  "CK (Male)":                                { min: 60,   max: 400 },
+  "CK-MB":                                    { max: 5 },
+  "Lactate Dehydrogenase (LDH)":              { max: 270 },
+  "Lactic Acid":                              { min: 0.5,  max: 2.2 },
+  "Serum Osmolality":                         { min: 275,  max: 295 },
+  Prealbumin:                                 { min: 19.5, max: 35.8 },
+  "Troponin I":                               { min: 0,    max: 0.4 },
+  "Troponin T":                               { min: 0,    max: 0.01 },
+  "Testosterone (Male)":                      { min: 270,  max: 1070 },
+  "Testosterone (Female)":                    { min: 6,    max: 86 },
+  Folate:                                     { min: 3.1,  max: 17.5 },
+  // ABG (also used as sub-line labels in multiline)
+  pH:                                         { min: 4.5, max: 8.0  },
+  pCO2:                                       { min: 35,   max: 45 },
+  PO2:                                        { min: 80,   max: 100 },
+  SaO2:                                       { min: 90 },
+  "HCO3-":                                    { min: 22,   max: 26 },
+  // UA sub-lines
+  "WBC (Microscopic)":                        { min: 0,    max: 5 },
+  "RBC (Microscopic)":                        { min: 0,    max: 2 },
+  Urobilinogen:                               { min: 0.2,  max: 1.0 },
+};
+
+// Critical / panic value bands — outside these = alert (↑↑ or ↓↓)
+const ALERT_RANGES: Record<string, { alertLow?: number; alertHigh?: number }> = {
+  "Hemoglobin (Male)":          { alertLow: 7.0,  alertHigh: 20.0 },
+  "Hemoglobin (Female)":        { alertLow: 7.0,  alertHigh: 20.0 },
+  "Platelet Count":             { alertLow: 50,   alertHigh: 1000 },
+  "WBC Count":                  { alertLow: 2.0,  alertHigh: 30.0 },
+  Neutrophils:                  { alertLow: 20,   alertHigh: 90 },
+  "Fasting Blood Sugar (FBS)":  { alertLow: 50,   alertHigh: 400 },
+  "Random Blood Sugar (RBS)":   { alertLow: 50,   alertHigh: 400 },
+  "Potassium (K+)":             { alertLow: 2.5,  alertHigh: 6.5 },
+  "Sodium (Na+)":               { alertLow: 120,  alertHigh: 160 },
+  "Calcium – Total (Ca++)":     { alertLow: 6.5,  alertHigh: 13.0 },
+  "Troponin I":                 { alertHigh: 2.0 },
+  "Troponin T":                 { alertHigh: 0.1 },
+  pH:                           { alertLow: 7.20, alertHigh: 7.60 },
+  pCO2:                         { alertLow: 20,   alertHigh: 70 },
+  PO2:                          { alertLow: 40 },
+  PT:                           { alertHigh: 30 },
+  INR:                          { alertHigh: 4.0 },
+  aPTT:                         { alertHigh: 70 },
+};
+
+export function getAbnormalStatus(
+  resultValue: string,
+  testName: string,
+  section: string,
+): AbnormalStatus {
+  if (!resultValue || !testName) return "normal";
+
+  const numVal = parseFloat(resultValue);
+  if (isNaN(numVal)) return "normal";
+
+  const range = FLAT_RANGES[testName];
+  if (!range) return "normal";
+
+  const alert = ALERT_RANGES[testName];
+  const { min, max } = range;
+
+  if (alert?.alertLow  !== undefined && numVal < alert.alertLow)  return "alert-low";
+  if (alert?.alertHigh !== undefined && numVal > alert.alertHigh) return "alert-high";
+  if (min !== undefined && numVal < min) return "low";
+  if (max !== undefined && numVal > max) return "high";
+
+  return "normal";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// USERS QUERIES
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const fetchUsers = async () => {
+  if (USE_MOCK_DATA) {
+    console.log('📦 Using MOCK data for users');
+    return MOCK_USERS;
+  }
+  
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }).catch((err) => {
+    console.error('Error fetching users after retries:', err);
+    return [];
+  });
+};
+
+export const addUser = async (user: {
+  full_name: string;
+  email: string;
+  role: 'member' | 'faculty';
+  department: string;
+}) => {
+  const encryptionKey = `ENC_KEY_${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+  
+  const { data, error } = await supabase
+    .from('users')
+    .insert([
+      {
+        full_name: user.full_name,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+        encryption_key: encryptionKey,
+      },
+    ])
+    .select();
+  
+  if (error) {
+    console.error('Error adding user:', error);
+    return null;
+  }
+  return data?.[0] || null;
+};
+
+export const updateUser = async (id: string, user: any) => {
+  const { data, error } = await supabase
+    .from('users')
+    .update(user)
+    .eq('id', id)
+    .select();
+  
+  if (error) {
+    console.error('Error updating user:', error);
+    return null;
+  }
+  return data?.[0] || null;
+};
+
+export const deleteUser = async (id: string) => {
+  const { error } = await supabase
+    .from('users')
+    .delete()
+    .eq('id', id);
+  
+  if (error) {
+    console.error('Error deleting user:', error);
+    return false;
+  }
+  return true;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATIENTS QUERIES
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const fetchPatients = async () => {
+  if (USE_MOCK_DATA) {
+    console.log('📦 Using MOCK data for patients');
+    return MOCK_PATIENTS;
+  }
+  
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('patients')
+      .select('*')
+      .order('date_registered', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }).catch((err) => {
+    console.error('Error fetching patients after retries:', err);
+    return [];
+  });
+};
+
+export const addPatient = async (patient: any, currentUser?: any) => {
+  if (USE_MOCK_DATA) {
+    const newPatient = {
+      id: `pat-${Date.now()}`,
+      ...patient,
+      date_registered: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    MOCK_PATIENTS.push(newPatient);
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || '',
+      action: 'edit',
+      resource: `${patient.patient_id_no} - ${patient.first_name} ${patient.last_name}`,
+      resource_type: 'Patient',
+      description: `Created new patient record: ${patient.first_name} ${patient.last_name} (Patient ID: ${patient.patient_id_no})`,
+    });
+    return newPatient;
+  }
+
+  const { data, error } = await supabase
+    .from('patients')
+    .insert([patient])
+    .select();
+  
+  if (error) {
+    console.error('Error adding patient:', error);
+    throw new Error(error.message || 'Failed to add patient');
+  }
+
+  if (data?.[0]) {
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || '',
+      action: 'edit',
+      resource: `${patient.patient_id_no} - ${patient.first_name} ${patient.last_name}`,
+      resource_type: 'Patient',
+      description: `Created new patient record: ${patient.first_name} ${patient.last_name} (Patient ID: ${patient.patient_id_no})`,
+    });
+  }
+
+  return data?.[0] || null;
+};
+
+export const updatePatient = async (id: string, patient: any, currentUser?: any) => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_PATIENTS.findIndex(p => p.id === id);
+    if (index !== -1) {
+      MOCK_PATIENTS[index] = { ...MOCK_PATIENTS[index], ...patient, updated_at: new Date().toISOString() };
+      await logActivity({
+        user_id: currentUser?.id,
+        user_name: currentUser?.full_name || 'Unknown User',
+        encryption_key: currentUser?.encryption_key || '',
+        action: 'edit',
+        resource: `${MOCK_PATIENTS[index].patient_id_no} - ${MOCK_PATIENTS[index].first_name} ${MOCK_PATIENTS[index].last_name}`,
+        resource_type: 'Patient',
+        description: `Updated patient demographics: ${MOCK_PATIENTS[index].first_name} ${MOCK_PATIENTS[index].last_name} (Patient ID: ${MOCK_PATIENTS[index].patient_id_no})`,
+      });
+      return MOCK_PATIENTS[index];
+    }
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from('patients')
+    .update(patient)
+    .eq('id', id)
+    .select();
+  
+  if (error) {
+    console.error('Error updating patient:', error);
+    throw new Error(error.message || 'Failed to update patient');
+  }
+  
+  if (data?.[0]) {
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || '',
+      action: 'edit',
+      resource: `${data[0].patient_id_no} - ${data[0].first_name} ${data[0].last_name}`,
+      resource_type: 'Patient',
+      description: `Updated patient demographics: ${data[0].first_name} ${data[0].last_name} (Patient ID: ${data[0].patient_id_no})`,
+    });
+  }
+  
+  return data?.[0] || null;
+};
+
+export const deletePatient = async (id: string) => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_PATIENTS.findIndex(p => p.id === id);
+    if (index !== -1) {
+      const deletedPatient = MOCK_PATIENTS[index];
+      MOCK_PATIENTS.splice(index, 1);
+      await logActivity({
+        user_name: 'Current User',
+        encryption_key: 'ENC_KEY_TEMP',
+        action: 'delete',
+        resource: `${deletedPatient.patient_id_no} - ${deletedPatient.first_name} ${deletedPatient.last_name}`,
+        resource_type: 'Patient',
+        description: `Deleted patient record: ${deletedPatient.first_name} ${deletedPatient.last_name} (Patient ID: ${deletedPatient.patient_id_no})`,
+      });
+      return true;
+    }
+    return false;
+  }
+
+  const { data: patientData } = await supabase
+    .from('patients')
+    .select('patient_id_no, first_name, last_name')
+    .eq('id', id)
+    .single();
+
+  const { error } = await supabase
+    .from('patients')
+    .delete()
+    .eq('id', id);
+  
+  if (error) {
+    console.error('Error deleting patient:', error);
+    return false;
+  }
+  
+  if (patientData) {
+    await logActivity({
+      user_name: 'Current User',
+      encryption_key: 'ENC_KEY_TEMP',
+      action: 'delete',
+      resource: `${patientData.patient_id_no} - ${patientData.first_name} ${patientData.last_name}`,
+      resource_type: 'Patient',
+      description: `Deleted patient record: ${patientData.first_name} ${patientData.last_name} (Patient ID: ${patientData.patient_id_no})`,
+    });
+  }
+  
+  return true;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST RESULTS QUERIES
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const fetchTestResults = async () => {
+  if (USE_MOCK_DATA) {
+    console.log('📦 Using MOCK data for test results');
+    return MOCK_TEST_RESULTS;
+  }
+  
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('test_results')
+      .select('*')
+      .order('date_created', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }).catch((err) => {
+    console.error('Error fetching test results after retries:', err);
+    return [];
+  });
+};
+
+const BILLING_PARENT_TESTS: Record<string, string[]> = {
+  HEMATOLOGY: ['Neutrophils', 'Lymphocytes', 'Monocytes', 'Eosinophils', 'Basophils'],
+  'CLINICAL MICROSCOPY': ['UA Color', 'UA Transparency', 'UA pH', 'UA Protein/Glucose', 'UA Bilirubin/Ketone', 'UA Urobilinogen', 'UA WBC (Microscopic)', 'UA RBC (Microscopic)', 'UA Bacteria/Casts/Crystals'],
+  MICROBIOLOGY: ['Culture', 'Preliminary Report', 'Final Report', 'Sensitivity (Antibiogram)'],
+};
+const BILLING_PARENT_NAMES: Record<string, string> = {
+  HEMATOLOGY: 'CBC',
+  'CLINICAL MICROSCOPY': 'Routine Urinalysis (UA)',
+  MICROBIOLOGY: 'Culture and Sensitivity',
+};
+
+export const addTestResult = async (result: any, currentUser?: any, skipBilling?: boolean) => {
+  if (USE_MOCK_DATA) {
+    const newResult = {
+      id: `result-${Date.now()}`,
+      ...result,
+      status: result.status || 'pending',
+      date_created: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    MOCK_TEST_RESULTS.push(newResult);
+
+    const isComponent = BILLING_PARENT_TESTS[result.section]?.includes(result.test_name);
+    const billingTestName = isComponent
+      ? (BILLING_PARENT_NAMES[result.section] || result.test_name)
+      : result.test_name;
+
+    // Guard: never create a duplicate billing record
+    const existingBilling = MOCK_BILLING.find(
+      b => b.patient_name === result.patient_name && b.test_name === billingTestName
+    );
+
+    // If skipBilling but this patient has NO billing record at all, create one anyway
+    // (handles results created from Specimen Tracking with no prior Test Request billing)
+    const patientHasAnyBilling = MOCK_BILLING.some(b => b.patient_name === result.patient_name);
+    if ((skipBilling && patientHasAnyBilling) || isComponent || existingBilling) {
+      await logActivity({
+        user_id: currentUser?.id,
+        user_name: currentUser?.full_name || 'Unknown User',
+        encryption_key: currentUser?.encryption_key || '',
+        action: 'edit',
+        resource: `${result.test_name} - ${result.patient_name}`,
+        resource_type: 'Test Result',
+        description: `Created test result: ${result.test_name} for patient ${result.patient_name} in section ${result.section}${isComponent ? ' (component of ' + (BILLING_PARENT_NAMES[result.section] || 'parent test') + ')' : existingBilling ? ' (billing already exists — skipped)' : ''}`,
+      });
+      return newResult;
+    }
+
+    const testCost = TEST_PRICING[result.section]?.[result.test_name] || 300;
+    const billingEntry = {
+      id: `billing-${Date.now()}`,
+      patient_name: result.patient_name,
+      test_name: result.test_name,
+      section: result.section,
+      amount: testCost,
+      status: 'unpaid',
+      date_created: new Date().toISOString().split('T')[0],
+      description: `Lab test: ${result.test_name}`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    MOCK_BILLING.push(billingEntry);
+
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || '',
+      action: 'edit',
+      resource: `${result.test_name} - ${result.patient_name}`,
+      resource_type: 'Test Result',
+      description: `Created test result: ${result.test_name} for patient ${result.patient_name} in section ${result.section}. Auto-billed: ₱${testCost.toFixed(2)}`,
+    });
+
+    return newResult;
+  }
+
+  // ── REAL SUPABASE PATH ──────────────────────────────────────────────────
+  const { data, error } = await supabase
+    .from('test_results')
+    .insert([result])
+    .select();
+  
+  if (error) {
+    console.error('Error adding test result:', error);
+    return null;
+  }
+
+  if (data?.[0]) {
+    const isComponent = BILLING_PARENT_TESTS[result.section]?.includes(result.test_name);
+    const billingTestName = isComponent
+      ? (BILLING_PARENT_NAMES[result.section] || result.test_name)
+      : result.test_name;
+
+    // Guard: never create a duplicate billing record
+    const { data: existingBilling } = await supabase
+      .from('billing')
+      .select('id')
+      .eq('patient_name', result.patient_name)
+      .eq('test_name', billingTestName)
+      .maybeSingle();
+
+    // Check if this patient has ANY billing record at all
+    const { data: anyPatientBilling } = await supabase
+      .from('billing')
+      .select('id')
+      .eq('patient_name', result.patient_name)
+      .limit(1)
+      .maybeSingle();
+
+    const testCost = TEST_PRICING[result.section]?.[result.test_name] || 300;
+
+    // Create billing if: not skipBilling, OR patient has zero billing records (Specimen Tracking path)
+    const shouldCreateBilling = !isComponent && !existingBilling && (!skipBilling || !anyPatientBilling);
+
+    if (shouldCreateBilling) {
+      const { error: billingError } = await supabase
+        .from('billing')
+        .insert([{
+          patient_name: result.patient_name,
+          test_name: result.test_name,
+          section: result.section,
+          amount: testCost,
+          status: 'unpaid',
+          description: `Lab test: ${result.test_name}`,
+          date_created: new Date().toISOString().split('T')[0],
+        }]);
+
+      if (billingError) {
+        console.error('Error creating billing record:', billingError);
+      }
+    }
+
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || '',
+      action: 'edit',
+      resource: `${result.test_name} - ${result.patient_name}`,
+      resource_type: 'Test Result',
+      description: `Created test result: ${result.test_name} for patient ${result.patient_name} in section ${result.section}${shouldCreateBilling ? `. Auto-billed: ₱${testCost.toFixed(2)}` : ''}`,
+    });
+  }
+
+  return data?.[0] || null;
+};
+
+
+export const updateTestResult = async (id: string, result: any, currentUser?: any) => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_TEST_RESULTS.findIndex(r => r.id === id);
+    if (index !== -1) {
+      const oldStatus = MOCK_TEST_RESULTS[index].status;
+      MOCK_TEST_RESULTS[index] = { ...MOCK_TEST_RESULTS[index], ...result, updated_at: new Date().toISOString() };
+      
+      if (result.status && result.status !== oldStatus) {
+        await logActivity({
+          user_id: currentUser?.id,
+          user_name: currentUser?.full_name || 'Unknown User',
+          encryption_key: currentUser?.encryption_key || '',
+          action: 'edit',
+          resource: `${MOCK_TEST_RESULTS[index].test_name} - ${MOCK_TEST_RESULTS[index].patient_name}`,
+          resource_type: 'Test Result',
+          description: `Updated test status: ${oldStatus.toUpperCase()} → ${result.status.toUpperCase()} for ${MOCK_TEST_RESULTS[index].test_name}`,
+        });
+      }
+      
+      return MOCK_TEST_RESULTS[index];
+    }
+    return null;
+  }
+
+  const { data: oldData } = await supabase
+    .from('test_results')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  const { data, error } = await supabase
+    .from('test_results')
+    .update(result)
+    .eq('id', id)
+    .select();
+  
+  if (error) {
+    console.error('Error updating test result:', error);
+    return null;
+  }
+
+  if (data?.[0] && result.status && result.status !== oldData?.status) {
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || '',
+      action: 'edit',
+      resource: `${data[0].test_name} - ${data[0].patient_name}`,
+      resource_type: 'Test Result',
+      description: `Updated test status: ${oldData?.status.toUpperCase()} → ${result.status.toUpperCase()} for ${data[0].test_name}`,
+    });
+  }
+
+  return data?.[0] || null;
+};
+
+export const deleteTestResult = async (id: string) => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_TEST_RESULTS.findIndex(r => r.id === id);
+    if (index !== -1) {
+      MOCK_TEST_RESULTS.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+
+  const { error } = await supabase
+    .from('test_results')
+    .delete()
+    .eq('id', id);
+  
+  if (error) {
+    console.error('Error deleting test result:', error);
+    return false;
+  }
+  return true;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BILLING QUERIES
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const fetchBilling = async () => {
+  if (USE_MOCK_DATA) {
+    console.log('📦 Using MOCK data for billing');
+    return MOCK_BILLING;
+  }
+  
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('billing')
+      .select('*')
+      .order('date_created', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }).catch((err) => {
+    console.error('Error fetching billing after retries:', err);
+    return [];
+  });
+};
+
+export const addBilling = async (billing: {
+  patient_name: string;
+  test_name: string;
+  section: string;
+  amount: number;
+  description?: string;
+}) => {
+  if (USE_MOCK_DATA) {
+    const newBilling = {
+      id: `billing-${Date.now()}`,
+      patient_name: billing.patient_name,
+      test_name: billing.test_name,
+      section: billing.section,
+      amount: billing.amount,
+      status: 'unpaid' as const,
+      description: billing.description || `${billing.test_name} - ${billing.section}`,
+      date_created: new Date().toISOString().split('T')[0],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    MOCK_BILLING.push(newBilling);
+    return newBilling;
+  }
+
+  const { data, error } = await supabase
+    .from('billing')
+    .insert([
+      {
+        patient_name: billing.patient_name,
+        test_name: billing.test_name,
+        section: billing.section,
+        amount: billing.amount,
+        description: billing.description || `${billing.test_name} - ${billing.section}`,
+        status: 'unpaid',
+      },
+    ])
+    .select();
+
+  if (error) {
+    console.error('Error adding billing:', error);
+    return null;
+  }
+  return data?.[0] || null;
+};
+
+export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid', currentUser?: any, extraFields?: { or_number?: string; date_paid?: string }) => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_BILLING.findIndex(b => b.id === id);
+    if (index !== -1) {
+      const oldStatus = MOCK_BILLING[index].status;
+      MOCK_BILLING[index] = { ...MOCK_BILLING[index], status, ...(extraFields || {}), updated_at: new Date().toISOString() };
+      await logActivity({
+        user_id: currentUser?.id,
+        user_name: currentUser?.full_name || 'Unknown User',
+        encryption_key: currentUser?.encryption_key || '',
+        action: 'edit',
+        resource: `${MOCK_BILLING[index].test_name} - ${MOCK_BILLING[index].patient_name}`,
+        resource_type: 'Billing',
+        description: `Updated billing status: ${oldStatus.toUpperCase()} → ${status.toUpperCase()} for ${MOCK_BILLING[index].test_name}. Amount: ₱${MOCK_BILLING[index].amount.toFixed(2)}`,
+      });
+      return MOCK_BILLING[index];
+    }
+    return null;
+  }
+
+  const { data: oldData } = await supabase
+    .from('billing')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  const { data, error } = await supabase
+    .from('billing')
+    .update({ status, ...(extraFields || {}), updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select();
+  
+  if (error) {
+    console.error('Error updating billing status:', error);
+    return null;
+  }
+
+  if (data?.[0]) {
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || '',
+      action: 'edit',
+      resource: `${data[0].test_name} - ${data[0].patient_name}`,
+      resource_type: 'Billing',
+      description: `Updated billing status: ${oldData?.status.toUpperCase()} → ${status.toUpperCase()} for ${data[0].test_name}. Amount: ₱${data[0].amount.toFixed(2)}`,
+    });
+  }
+
+  return data?.[0] || null;
+};
+
+export const deleteBilling = async (id: string) => {
+  if (USE_MOCK_DATA) {
+    const index = MOCK_BILLING.findIndex(b => b.id === id);
+    if (index !== -1) {
+      MOCK_BILLING.splice(index, 1);
+      return true;
+    }
+    return false;
+  }
+
+  const { error } = await supabase
+    .from('billing')
+    .delete()
+    .eq('id', id);
+  
+  if (error) {
+    console.error('Error deleting billing:', error);
+    return false;
+  }
+  return true;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT LOGS QUERIES
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const fetchAuditLogs = async () => {
+  if (USE_MOCK_DATA) {
+    console.log('📦 Using MOCK data for audit logs');
+    return MOCK_AUDIT_LOGS;
+  }
+  
+  return withRetry(async () => {
+    const { data, error } = await supabase
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }).catch((err) => {
+    console.error('Error fetching audit logs after retries:', err);
+    return [];
+  });
+};
+
+export const logActivity = async (log: {
+  user_id?: string;
+  user_name: string;
+  encryption_key: string;
+  action: 'login' | 'logout' | 'view' | 'edit' | 'delete' | 'download';
+  resource: string;
+  resource_type: string;
+  description: string;
+  ip_address?: string;
+}) => {
+  try {
+    if (USE_MOCK_DATA) {
+      const newLog: any = {
+        id: `log-${Date.now()}`,
+        user_id: log.user_id || 'user-temp',
+        user_name: log.user_name,
+        encryption_key: log.encryption_key,
+        action: log.action,
+        resource: log.resource,
+        resource_type: log.resource_type,
+        description: log.description,
+        ip_address: log.ip_address || '',
+        created_at: new Date().toISOString(),
+      };
+      MOCK_AUDIT_LOGS.push(newLog);
+      return true;
+    }
+
+    const { error } = await supabase
+      .from('audit_logs')
+      .insert([{ ...log, ip_address: log.ip_address || '' }]);
+    
+    if (error) {
+      console.error('Error logging activity:', error);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('Error logging activity:', error);
+    return false;
+  }
+};
+
+export const subscribeToAuditLogs = (callback: (log: any) => void) => {
+  const channel = supabase
+    .channel('audit_logs_channel')
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'audit_logs' },
+      (payload) => { callback(payload.new); }
+    )
+    .subscribe(async (status) => {
+      // When the channel reconnects after being idle/dropped,
+      // re-hydrate the session so all subsequent queries have a valid token
+      if (status === 'SUBSCRIBED') {
+        await supabase.auth.getSession();
+      }
+    });
+
+  return () => { supabase.removeChannel(channel); };
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const getTestPrice = (testName: string, section: string): number | null => {
+  return TEST_PRICING[section]?.[testName] || null;
+};
+
+export const enrichTestResultWithBilling = (result: any, billings: any[] = []) => {
+  const isComponent = BILLING_PARENT_TESTS[result.section]?.includes(result.test_name);
+  const billingTestName = isComponent ? (BILLING_PARENT_NAMES[result.section] || result.test_name) : result.test_name;
+  const price = getTestPrice(billingTestName, result.section);
+  const billing = billings.find(b =>
+    b.test_name === billingTestName &&
+    b.patient_name === result.patient_name
+  );
+  const abnormal = getAbnormalStatus(result.result_value, result.test_name, result.section);
+  
+  return {
+    ...result,
+    price,
+    paymentStatus: billing?.status || 'unpaid',
+    abnormal,
+  };
+};
