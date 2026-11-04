@@ -28,7 +28,7 @@ import {
   Stethoscope,
   FlaskConical,
 } from "lucide-react";
-import { fetchTestResults, fetchPatients } from "@/lib/database";
+import { fetchTestResults, fetchPatients, updateTestResult } from "@/lib/database";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/authContext";
 import { logActivity } from "@/lib/database";
@@ -515,8 +515,8 @@ function LISWorkflowStepper({ currentStep }: { currentStep: number }) {
 const isSeniorOrAbove = (user: any): boolean => {
   if (!user) return false;
   const role = user.role?.toLowerCase();
-  // Accept explicit senior/admin roles
-  if (['faculty', 'senior_medtech', 'senior', 'admin', 'pathologist'].includes(role)) return true;
+  // Senior MedTechs and faculty only. Admins don't perform lab work (separation of duties).
+  if (['faculty', 'senior_medtech', 'senior', 'pathologist'].includes(role)) return true;
   // Fallback: check a dedicated is_senior flag if present
   if (user.is_senior === true) return true;
   return false;
@@ -625,9 +625,12 @@ export default function QualityCheckingPage() {
   // ── Computed: which test_result_ids already have a QC ─────────────────────
   const checkedResultIds = new Set(qcChecks.map((q) => q.test_result_id));
 
-  // ── Pending results: any result that hasn't been QC-checked yet ──────────────
+  // ── Pending results: submitted for verification (incl. corrected resubmissions),
+  //    plus older results that were never QC-checked ──────────────────────────
   const pendingResults = testResults.filter(
-    (r) => !checkedResultIds.has(r.id)
+    (r) =>
+      r.status === "for_verification" ||
+      (!checkedResultIds.has(r.id) && !["approved", "released", "encoding"].includes(r.status))
   );
 
   // ── Filtered results for the picker ─────────────────────────────────────────
@@ -705,6 +708,16 @@ export default function QualityCheckingPage() {
     if (!result) {
       setSubmitError("Failed to save quality check. Please try again.");
       return;
+    }
+
+    // Move the result through the workflow automatically:
+    // PASS -> approved (ready for the report), FAIL -> back to encoding for correction.
+    if (selectedResult.status !== "released") {
+      await updateTestResult(
+        selectedResult.id,
+        { status: derivedQcResult === "pass" ? "approved" : "encoding" },
+        user,
+      );
     }
 
     setSubmitSuccess({

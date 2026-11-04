@@ -18,20 +18,23 @@ import {
   Menu,
   X,
   FlaskConical,
+  LayoutDashboard,
+  Stethoscope,
+  UserCog,
+  KeyRound,
 } from 'lucide-react';
+import { isSeniorMedtech, roleLabel } from '@/lib/roles';
+import { supabase } from '@/lib/supabaseClient';
 
 interface SidebarProps {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
+  /** staff = lab dashboard (default), admin = admin panel, doctor = doctor portal */
+  variant?: 'staff' | 'admin' | 'doctor';
 }
 
-const isSeniorOrAbove = (user: any): boolean => {
-  if (!user) return false;
-  if (user.role === 'faculty') return true;
-  return ['ryza', 'xavier'].some(n => user.full_name?.toLowerCase().includes(n));
-};
 
-export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
+export default function Sidebar({ isOpen, setIsOpen, variant = 'staff' }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, signOut } = useAuth();
@@ -55,6 +58,27 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     setMobileMenuOpen(false);
   }, [pathname]);
 
+  // Work-queue badges: results waiting for a senior's QC, and results returned for correction
+  const [badges, setBadges] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (variant !== 'staff' || !user) return;
+    let active = true;
+    const load = async () => {
+      const [waiting, returned] = await Promise.all([
+        supabase.from('test_results').select('id', { head: true, count: 'exact' }).eq('status', 'for_verification'),
+        supabase.from('test_results').select('id', { head: true, count: 'exact' }).eq('status', 'encoding'),
+      ]);
+      if (!active) return;
+      setBadges({
+        '/dashboard/quality-checking': waiting.count ?? 0,
+        '/dashboard/results': returned.count ?? 0,
+      });
+    };
+    load();
+    const t = setInterval(load, 60000);
+    return () => { active = false; clearInterval(t); };
+  }, [variant, user, pathname]);
+
   const handleLogout = async () => {
     await signOut();
   };
@@ -74,11 +98,27 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
     { label: 'Profile',             path: '/dashboard/profile',              icon: User,          seniorOnly: false },
   ];
 
-  const canAccessQC = isSeniorOrAbove(user);
-  const menuItems = allMenuItems.filter(item => !item.seniorOnly || canAccessQC);
+  const adminMenuItems = [
+    { label: 'Overview',        path: '/admin',            icon: LayoutDashboard, seniorOnly: false },
+    { label: 'Doctors',         path: '/admin/doctors',    icon: Stethoscope,     seniorOnly: false },
+    { label: 'Users',           path: '/admin/users',      icon: UserCog,         seniorOnly: false },
+    { label: 'Audit Log',       path: '/admin/audit-log',  icon: History,         seniorOnly: false },
+  ];
 
-  // Divider appears before Access History (index 8 in original = find by path)
-  const historyIndex = menuItems.findIndex(i => i.path === '/dashboard/history');
+  const doctorMenuItems = [
+    { label: 'My Dashboard',    path: '/doctor',           icon: LayoutDashboard, seniorOnly: false },
+    { label: 'Change Password', path: '/doctor/password',  icon: KeyRound,        seniorOnly: false },
+  ];
+
+  // Quality Checking is for senior MedTechs/faculty only (separation of duties)
+  const canAccessQC = isSeniorMedtech(user);
+  const staffItems = allMenuItems.filter(item => !item.seniorOnly || canAccessQC);
+  const menuItems =
+    variant === 'admin' ? adminMenuItems : variant === 'doctor' ? doctorMenuItems : staffItems;
+
+  // Divider before Access History (staff) or before the switch link (admin)
+  const dividerPath = variant === 'admin' ? '/admin/audit-log' : '/dashboard/history';
+  const historyIndex = menuItems.findIndex(i => i.path === dividerPath);
 
   return (
     <>
@@ -115,7 +155,7 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
             <div className="mb-4 pb-4 border-b border-[#8BA49A]">
               <p className="text-xs text-[#CBDED3] font-semibold">LOGGED IN AS</p>
               <p className="text-sm font-semibold text-white mt-1">{user.full_name || user.email}</p>
-              <p className="text-xs text-[#CBDED3] capitalize">{user.role}</p>
+              <p className="text-xs text-[#CBDED3]">{roleLabel(user.role)}</p>
             </div>
           )}
           <div className="flex items-center justify-between">
@@ -163,7 +203,15 @@ export default function Sidebar({ isOpen, setIsOpen }: SidebarProps) {
                 >
                   <Icon className="w-5 h-5 flex-shrink-0" />
                   {(isOpen || isMobile) && (
-                    <span className="text-sm font-medium">{item.label}</span>
+                    <span className="text-sm font-medium flex-1">{item.label}</span>
+                  )}
+                  {badges[item.path] > 0 && (
+                    <span
+                      title={item.path === '/dashboard/results' ? 'Returned by QC for correction' : 'Waiting for Senior MedTech verification'}
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.path === '/dashboard/results' ? 'bg-red-500' : 'bg-yellow-400 text-gray-900'}`}
+                    >
+                      {badges[item.path]}
+                    </span>
                   )}
                 </Link>
               </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from './supabaseClient';
 import { MOCK_USERS } from './mockData';
 
@@ -31,6 +31,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [authUser, setAuthUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  // Email whose profile is currently loaded, so token refreshes don't refetch it.
+  const profileEmailRef = useRef<string | null>(null);
 
   // Check if user is logged in on mount
   useEffect(() => {
@@ -63,17 +65,51 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // so we don't need a separate getSession() call that can race with it.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      // IMPORTANT: this callback must not await Supabase calls. Supabase runs it
+      // while holding its auth lock (e.g. during a token refresh when the tab
+      // becomes visible again); awaiting a query here deadlocks every later
+      // request. Do the profile fetch on the next tick instead.
       if (!isEffectActive) return;
 
-      if (session?.user) {
-        setAuthUser(session.user);
-        await fetchUserProfile(session.user.id, session.user.email);
-      } else {
+      if (!session?.user) {
+        profileEmailRef.current = null;
         setAuthUser(null);
         setUser(null);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      setAuthUser(session.user);
+
+      // A token refresh doesn't change who is signed in; keep the loaded profile.
+      if (profileEmailRef.current === session.user.email) {
+        setLoading(false);
+        return;
+      }
+
+      const { id, email } = session.user;
+      setTimeout(async () => {
+        if (!isEffectActive) return;
+        await fetchUserProfile(id, email);
+        setLoading(false);
+      }, 0);
+    });
+
+    // A saved login can become invalid (password changed/reset, signed out
+    // elsewhere). Supabase then reports "Invalid Refresh Token". Clear the stale
+    // login locally so the user is simply sent back to the login page.
+    supabase.auth.getSession().then(({ error }) => {
+      if (error && /refresh token/i.test(error.message)) {
+        console.warn('Saved login expired; signing out locally.');
+        supabase.auth.signOut({ scope: 'local' }).finally(() => {
+          if (!isEffectActive) return;
+          profileEmailRef.current = null;
+          setAuthUser(null);
+          setUser(null);
+          setLoading(false);
+        });
+      }
     });
 
     return () => {
@@ -114,6 +150,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (data) {
         console.log('User profile found:', data);
+        profileEmailRef.current = data.email;
         setUser({
           id: data.id,
           email: data.email,
@@ -200,6 +237,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (userData) {
+        profileEmailRef.current = userData.email;
         setUser({
           id: userData.id,
           email: userData.email,
@@ -229,6 +267,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
+      profileEmailRef.current = null;
       setUser(null);
       setAuthUser(null);
     } catch (error) {

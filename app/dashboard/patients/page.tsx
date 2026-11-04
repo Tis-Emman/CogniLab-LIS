@@ -30,6 +30,9 @@ import {
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/authContext";
 import { logActivity } from "@/lib/database";
+import PhysicianPicker from "@/components/PhysicianPicker";
+import BarangaySelect, { FixedField } from "@/components/BarangaySelect";
+import { SERVICE_AREA } from "@/config/constants";
 
 function generatePatientId(existingPatients: any[]): string {
   const year = new Date().getFullYear().toString().slice(-2); // "26"
@@ -116,6 +119,7 @@ export default function PatientsPage() {
   const [showTRPopup, setShowTRPopup] = useState(false);
   const [trPatient, setTrPatient] = useState<Patient | null>(null);
   const [trPhysician, setTrPhysician] = useState("");
+  const [trDoctorId, setTrDoctorId] = useState<string | null>(null);
   const [trNotes, setTrNotes] = useState("");
   const [trDatetime, setTrDatetime] = useState("");
   const [trSection, setTrSection] = useState(TR_LAB_SECTIONS[0]);
@@ -142,8 +146,8 @@ export default function PatientsPage() {
   address_house_no: "",
   address_street: "",
   address_barangay: "",
-  municipality: "",
-  province: "",
+  municipality: SERVICE_AREA.city as string,
+  province: SERVICE_AREA.province as string,
   medical_history: "",
   medications: "",
   allergy: "",
@@ -247,9 +251,8 @@ export default function PatientsPage() {
     } else if (!valid) {
       newErrors.contact_no = "Invalid Philippine mobile number.";
     }
-    if (!formData.municipality.trim())
-      newErrors.municipality = "Municipality is required";
-    if (!formData.province.trim()) newErrors.province = "Province is required";
+    if (!formData.address_barangay.trim())
+      newErrors.address_barangay = "Barangay is required";
     if (!formData.medical_history.trim())
       newErrors.medical_history = "Medical history is required";
     if (!formData.medications.trim())
@@ -273,8 +276,7 @@ export default function PatientsPage() {
         "age",
         "birthdate",
         "contact_no",
-        "municipality",
-        "province",
+        "address_barangay",
         "medical_history",
         "medications",
         "allergy",
@@ -324,8 +326,8 @@ export default function PatientsPage() {
           address_house_no: formData.address_house_no || null,
           address_street: formData.address_street || null,
           address_barangay: formData.address_barangay,
-          municipality: formData.municipality,
-          province: formData.province,
+          municipality: SERVICE_AREA.city,
+          province: SERVICE_AREA.province,
           medical_history: formData.medical_history,
           medications: formData.medications,
           allergy: formData.allergy,
@@ -348,8 +350,8 @@ export default function PatientsPage() {
         address_house_no: "",
         address_street: "",
         address_barangay: "",
-        municipality: "",
-        province: "",
+        municipality: SERVICE_AREA.city,
+        province: SERVICE_AREA.province,
         medical_history: "",
         medications: "",
         allergy: "",
@@ -369,6 +371,7 @@ export default function PatientsPage() {
       setTrTests([]);
       setTrSection(TR_LAB_SECTIONS[0]);
       setTrPhysician("");
+      setTrDoctorId(null);
       setTrNotes("");
       setTrError(null);
       setTrSuccess(false);
@@ -410,25 +413,30 @@ export default function PatientsPage() {
       patient_id: trPatient.id,
       patient_name: `${trPatient.first_name} ${trPatient.last_name}`.trim(),
       requesting_physician: trPhysician.trim(),
+      ...(trDoctorId ? { doctor_id: trDoctorId } : {}),
       requested_tests: trTests,
       sample_collection_datetime: trDatetime ? new Date(trDatetime).toISOString() : new Date().toISOString(),
       status: "pending" as const,
       notes: trNotes.trim() || undefined,
       created_by: user?.full_name || user?.email || "Unknown",
     };
+    let createdRequestId: string | null = null;
     try {
       if (USE_MOCK_DATA) {
         MOCK_TEST_REQUESTS.push({ id: `tr-${Date.now()}`, ...payload, created_at: new Date().toISOString() });
         await logActivity({ user_id: user?.id, user_name: user?.full_name || "Unknown", encryption_key: user?.encryption_key || "", action: "edit", resource: `Test Request - ${payload.patient_name}`, resource_type: "Test Request", description: `Created test request for ${payload.patient_name}` });
       } else {
-        const { error } = await supabase.from("test_requests").insert([payload]);
+        const { data: created, error } = await supabase.from("test_requests").insert([payload]).select("id").single();
         if (error) throw error;
+        createdRequestId = created?.id ?? null;
         await logActivity({ user_id: user?.id, user_name: user?.full_name || "Unknown", encryption_key: user?.encryption_key || "", action: "edit", resource: `Test Request - ${payload.patient_name}`, resource_type: "Test Request", description: `Created test request for ${payload.patient_name} with ${trTests.length} test(s)` });
       }
       // ── Auto-create billing records for each requested test ──────────────
       for (const t of trTests) {
         const price = getTestPrice(t.test_name, t.section) ?? 300;
         await addBilling({
+          patient_id: trPatient.id,
+          test_request_id: createdRequestId,
           patient_name: payload.patient_name,
           test_name: t.test_name,
           section: t.section,
@@ -521,8 +529,7 @@ export default function PatientsPage() {
     let valid = /^09\d{9}$/.test(contact) || /^\+639\d{9}$/.test(contact) || /^639\d{9}$/.test(contact);
     if (!contact) newErrors.contact_no = "Contact number is required";
     else if (!valid) newErrors.contact_no = "Invalid Philippine mobile number.";
-    if (!data.municipality.trim()) newErrors.municipality = "Municipality is required";
-    if (!data.province.trim()) newErrors.province = "Province is required";
+    if (!data.address_barangay.trim()) newErrors.address_barangay = "Barangay is required";
     if (!data.medical_history.trim()) newErrors.medical_history = "Medical history is required";
     if (!data.medications.trim()) newErrors.medications = "Medications is required";
     if (!data.allergy.trim()) newErrors.allergy = "Allergy information is required";
@@ -555,8 +562,8 @@ export default function PatientsPage() {
         address_house_no: editFormData.address_house_no || null,
         address_street: editFormData.address_street || null,
         address_barangay: editFormData.address_barangay || "",
-        municipality: editFormData.municipality,
-        province: editFormData.province,
+        municipality: SERVICE_AREA.city,
+        province: SERVICE_AREA.province,
         medical_history: editFormData.medical_history,
         medications: editFormData.medications,
         allergy: editFormData.allergy,
@@ -874,69 +881,22 @@ export default function PatientsPage() {
 
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Barangay
+                    Barangay <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="text"
+                  <BarangaySelect
                     value={formData.address_barangay}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        address_barangay: e.target.value,
-                      })
-                    }
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white"
-                    placeholder="Optional"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Municipality/City <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.municipality}
-                    onChange={(e) =>
-                      setFormData({ ...formData, municipality: e.target.value })
-                    }
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                      errors.municipality
-                        ? "border-red-500 bg-red-50"
-                        : "border-gray-300"
+                    onChange={(v) => setFormData({ ...formData, address_barangay: v })}
+                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 bg-white ${
+                      errors.address_barangay ? "border-red-500 bg-red-50" : "border-gray-300"
                     }`}
-                    placeholder="e.g., Makati"
                   />
-                  {errors.municipality && (
-                    <p className="text-red-500 text-sm mt-1">
-                      {errors.municipality}
-                    </p>
+                  {errors.address_barangay && (
+                    <p className="text-red-500 text-sm mt-1">{errors.address_barangay}</p>
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Province <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.province}
-                    onChange={(e) =>
-                      setFormData({ ...formData, province: e.target.value })
-                    }
-                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition text-gray-800 placeholder-gray-500 bg-white ${
-                      errors.province
-                        ? "border-red-500 bg-red-50"
-                        : "border-gray-300"
-                    }`}
-                    placeholder="e.g., NCR"
-                  />
-                  {errors.province && (
-                    <p className="text-red-500 text-sm mt-1">
-                      {errors.province}
-                    </p>
-                  )}
-                </div>
+                <FixedField label="Municipality/City" value={SERVICE_AREA.city} />
+                <FixedField label="Province" value={SERVICE_AREA.province} />
               </div>
             </div>
 
@@ -1742,9 +1702,6 @@ export default function PatientsPage() {
                     {[
                       { key: "address_house_no", label: "House No.", required: false, placeholder: "Optional" },
                       { key: "address_street", label: "Street Name", required: false, placeholder: "Optional" },
-                      { key: "address_barangay", label: "Barangay", required: false, placeholder: "Optional" },
-                      { key: "municipality", label: "Municipality/City", required: true, placeholder: "e.g., Makati" },
-                      { key: "province", label: "Province", required: true, placeholder: "e.g., NCR" },
                     ].map(({ key, label, required, placeholder }) => (
                       <div key={key}>
                         <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -1760,6 +1717,19 @@ export default function PatientsPage() {
                         {(editErrors as any)[key] && <p className="text-red-500 text-sm mt-1">{(editErrors as any)[key]}</p>}
                       </div>
                     ))}
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">
+                        Barangay <span className="text-red-500">*</span>
+                      </label>
+                      <BarangaySelect
+                        value={editFormData.address_barangay}
+                        onChange={(v) => setEditFormData({ ...editFormData, address_barangay: v })}
+                        className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent outline-none transition text-gray-800 bg-white ${(editErrors as any).address_barangay ? "border-red-500 bg-red-50" : "border-gray-300"}`}
+                      />
+                      {(editErrors as any).address_barangay && <p className="text-red-500 text-sm mt-1">{(editErrors as any).address_barangay}</p>}
+                    </div>
+                    <FixedField label="Municipality/City" value={SERVICE_AREA.city} />
+                    <FixedField label="Province" value={SERVICE_AREA.province} />
                   </div>
                 </div>
 
@@ -1867,19 +1837,12 @@ export default function PatientsPage() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   {/* Physician */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      <Stethoscope className="w-4 h-4 inline mr-1" />
-                      Requesting Physician <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={trPhysician}
-                      onChange={e => setTrPhysician(e.target.value)}
-                      placeholder="e.g. Dr. Juan Dela Cruz"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition bg-white"
-                    />
-                  </div>
+                  <PhysicianPicker
+                    barangay={trPatient.address_barangay}
+                    value={{ doctorId: trDoctorId, name: trPhysician }}
+                    onChange={v => { setTrDoctorId(v.doctorId); setTrPhysician(v.name); }}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-800 focus:ring-2 focus:ring-[#3B6255] focus:border-transparent outline-none transition bg-white"
+                  />
 
                   {/* Notes */}
                   <div className="md:col-span-2">

@@ -3,17 +3,23 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Lock, Shield, Loader } from 'lucide-react';
 import { fetchUsers, addUser, updateUser, deleteUser } from '@/lib/database';
+import { roleLabel } from '@/lib/roles';
+
+type Role = 'member' | 'faculty' | 'senior_medtech' | 'admin' | 'doctor';
 
 interface User {
   id: string;
   full_name: string;
   email: string;
-  role: 'member' | 'faculty';
+  role: Role;
   department: string;
   status: 'active' | 'inactive';
   join_date: string;
   last_login: string | null;
   encryption_key: string;
+  signatory_name?: string | null;
+  license_no?: string | null;
+  signature_file?: string | null;
 }
 
 export default function UserManagementPage() {
@@ -26,8 +32,11 @@ export default function UserManagementPage() {
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
-    role: 'member' as 'member' | 'faculty',
+    role: 'member' as Role,
     department: '',
+    signatory_name: '',
+    license_no: '',
+    signature_file: '',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -50,7 +59,11 @@ export default function UserManagementPage() {
     if (!formData.email.trim()) newErrors.email = 'Email is required';
     if (!formData.department.trim()) newErrors.department = 'Department is required';
 
-    // Check user limits
+    // Check user limits (only when adding; editing an existing user must always work)
+    if (editingId) {
+      setErrors(newErrors);
+      return Object.keys(newErrors).length === 0;
+    }
     const memberCount = users.filter((u) => u.role === 'member' && u.id !== editingId).length;
     const facultyCount = users.filter((u) => u.role === 'faculty' && u.id !== editingId).length;
 
@@ -77,6 +90,10 @@ export default function UserManagementPage() {
           email: formData.email,
           role: formData.role,
           department: formData.department,
+          // Report signatory details (migration 004)
+          signatory_name: formData.signatory_name.trim() || null,
+          license_no: formData.license_no.trim() || null,
+          signature_file: formData.signature_file.trim() || null,
         });
       } else {
         await addUser(formData);
@@ -91,7 +108,7 @@ export default function UserManagementPage() {
   };
 
   const resetForm = () => {
-    setFormData({ full_name: '', email: '', role: 'member', department: '' });
+    setFormData({ full_name: '', email: '', role: 'member', department: '', signatory_name: '', license_no: '', signature_file: '' });
     setErrors({});
     setShowForm(false);
     setEditingId(null);
@@ -103,6 +120,9 @@ export default function UserManagementPage() {
       email: user.email,
       role: user.role,
       department: user.department,
+      signatory_name: user.signatory_name || '',
+      license_no: user.license_no || '',
+      signature_file: user.signature_file || '',
     });
     setEditingId(user.id);
     setShowForm(true);
@@ -149,15 +169,15 @@ export default function UserManagementPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-[#3B6255]">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Total Users</h3>
-          <p className="text-3xl font-bold text-[#3B6255]">8</p>
+          <p className="text-3xl font-bold text-[#3B6255]">{users.length}</p>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-green-600">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Member Users</h3>
-          <p className="text-3xl font-bold text-green-600">8</p>
+          <p className="text-3xl font-bold text-green-600">{memberCount}</p>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-blue-600">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">Faculty Users</h3>
-          <p className="text-3xl font-bold text-blue-600">1</p>
+          <p className="text-3xl font-bold text-blue-600">{facultyCount}</p>
         </div>
       </div>
 
@@ -208,13 +228,16 @@ export default function UserManagementPage() {
                 </label>
                 <select
                   value={formData.role}
-                  onChange={(e) => setFormData({ ...formData, role: e.target.value as 'member' | 'faculty' })}
+                  onChange={(e) => setFormData({ ...formData, role: e.target.value as Role })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] text-gray-800 bg-white ${
                     errors.role ? 'border-red-500' : 'border-gray-300'
                   }`}
                 >
                   <option value="member">Member (Max 8)</option>
                   <option value="faculty">Faculty (Max 1)</option>
+                  <option value="senior_medtech">Senior MedTech</option>
+                  <option value="admin">Administrator</option>
+                  {formData.role === 'doctor' && <option value="doctor">Doctor (manage in Doctors page)</option>}
                 </select>
                 {errors.role && <p className="text-red-500 text-sm mt-1">{errors.role}</p>}
               </div>
@@ -235,6 +258,32 @@ export default function UserManagementPage() {
                 {errors.department && <p className="text-red-500 text-sm mt-1">{errors.department}</p>}
               </div>
             </div>
+
+            {editingId && ['member', 'senior_medtech', 'faculty'].includes(formData.role) && (
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="font-semibold text-gray-800 mb-1">Report Signatory</h3>
+                <p className="text-xs text-gray-500 mb-4">Printed on laboratory reports when this MedTech encodes or quality-checks results.</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {([
+                    ['signatory_name', 'Printed Name', 'e.g. Ryza R. Alvaran, RMT'],
+                    ['license_no', 'License No.', 'e.g. Lic. #0008'],
+                    ['signature_file', 'Signature File', 'e.g. ryza-signature.png'],
+                  ] as const).map(([key, label, ph]) => (
+                    <div key={key}>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">{label}</label>
+                      <input
+                        type="text"
+                        value={formData[key]}
+                        onChange={(e) => setFormData({ ...formData, [key]: e.target.value })}
+                        placeholder={ph}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#3B6255] text-gray-800 bg-white"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">Signature images go in <code>public/signatures/</code>.</p>
+              </div>
+            )}
 
             <div className="flex gap-4 pt-6 border-t border-gray-200">
               <button
@@ -278,18 +327,25 @@ export default function UserManagementPage() {
             <tbody>
               {users.map((user) => (
                 <tr key={user.id} className="border-b border-gray-100 hover:bg-[#F0F4F1] transition">
-                  <td className="py-4 px-8 font-medium text-gray-800">{user.full_name}</td>
+                  <td className="py-4 px-8 font-medium text-gray-800">
+                    {user.full_name}
+                    {user.signatory_name && <p className="text-xs text-gray-400 font-normal">{user.signatory_name} · {user.license_no}</p>}
+                  </td>
                   <td className="py-4 px-8 text-gray-600">{user.email}</td>
                   <td className="py-4 px-8">
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 w-fit ${
                         user.role === 'faculty'
                           ? 'bg-blue-100 text-blue-800'
+                          : user.role === 'admin'
+                          ? 'bg-purple-100 text-purple-800'
+                          : user.role === 'doctor'
+                          ? 'bg-teal-100 text-teal-800'
                           : 'bg-green-100 text-green-800'
                       }`}
                     >
                       <Shield className="w-3 h-3" />
-                      {user.role === 'faculty' ? 'Faculty' : 'Member'}
+                      {roleLabel(user.role)}
                     </span>
                   </td>
                   <td className="py-4 px-8 text-gray-600">{user.department}</td>

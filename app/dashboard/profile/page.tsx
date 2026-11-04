@@ -34,14 +34,14 @@ export default function ProfilePage() {
     phone: dbData?.phone || '',
     role: u?.role === 'faculty'
       ? 'Laboratory Director'
-      : ['ryza', 'xavier'].some(n => u?.full_name?.toLowerCase().includes(n))
+      : u?.role === 'senior_medtech'
         ? 'Senior Medical Technologist'
         : 'Junior Medical Technologist',
     department: u?.department || 'General',
     avatar: u?.role === 'faculty' ? '👨‍⚕️' : '👤',
     credentials: u?.role === 'faculty'
       ? ['RMT']
-      : ['ryza', 'xavier'].some(n => u?.full_name?.toLowerCase().includes(n))
+      : u?.role === 'senior_medtech'
         ? ['RMT', 'MLS(ASCP)']
         : ['RMT'],
     certifications: u?.role === 'faculty'
@@ -258,7 +258,7 @@ export default function ProfilePage() {
               )}
             </div>
             <div>
-              <label className="text-sm font-semibold text-gray-7700 mb-2 block">Province</label>
+              <label className="text-sm font-semibold text-gray-700 mb-2 block">Province</label>
               {isEditing ? (
                 <input
                   type="text"

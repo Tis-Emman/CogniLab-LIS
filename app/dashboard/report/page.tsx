@@ -3,7 +3,9 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Eye, Printer, FlaskConical, CheckSquare, Square } from "lucide-react";
 import { useReactToPrint } from "react-to-print";
-import { fetchTestResults, fetchPatients, fetchBilling } from "@/lib/database";
+import { fetchTestResults, fetchPatients, fetchBilling, releaseTestResults } from "@/lib/database";
+import { useAuth } from "@/lib/authContext";
+import { isSeniorMedtech } from "@/lib/roles";
 import { supabase } from "@/lib/supabaseClient";
 
 const DROPDOWN_TESTS = [
@@ -113,6 +115,126 @@ const MEDTECH_LIST = [
   { id: "ryza-alvaran",           displayName: "Ryza R. Alvaran, RMT, MLS(ASCP)",                 license: "Lic. #0008", signatureFile: "ryza-signature.png" },
 ];
 
+type Medtech = typeof MEDTECH_LIST[0];
+// MEDTECH_LIST is only a fallback: the report loads signatories from the users
+// table (signatory_name, license_no, signature_file — migration 004).
+
+// ── Name matching helpers ───────────────────────────────────────────────────
+const NAME_STOPWORDS = new Set(["rmt", "mls", "ascp", "md", "fpsp", "dr", "lic", "jr", "sr", "mr", "ms", "mrs"]);
+
+/** Lowercase word tokens from a name / email / id. Drops titles, initials, and email domains. */
+const nameTokens = (s?: string | null): string[] =>
+  (s ?? "")
+    .toString()
+    .toLowerCase()
+    .split("@")[0] // "mycah.hernandez@x.com" -> "mycah.hernandez"
+    .replace(/[^a-z\s]/g, " ") // drops punctuation, digits, commas, dots, dashes
+    .split(/\s+/)
+    .filter((t) => t.length >= 2 && !NAME_STOPWORDS.has(t));
+
+
+/**
+ * Resolve any stored value (full name, partial name, email, "LAST, FIRST", or a user id
+ * found in `directory`) to a MEDTECH_LIST entry. Returns null if nothing matches or the match is ambiguous.
+ */
+function resolveMedtechValue(
+  value: string | undefined | null,
+  directory: Record<string, string>,
+  list: Medtech[] = MEDTECH_LIST,
+): Medtech | null {
+  const MEDTECH_TOKENS = list.map((m) => ({
+    medtech: m,
+    tokens: new Set([...nameTokens(m.displayName), ...nameTokens(m.id)]),
+  }));
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  // If the value is an id/email we know from the profiles table, swap it for the real name
+  const viaDirectory = directory[raw.toLowerCase()];
+  const candidates = viaDirectory ? [viaDirectory, raw] : [raw];
+
+  for (const candidate of candidates) {
+    const tokens = nameTokens(candidate).filter((t) => t.length >= 3);
+    if (tokens.length === 0) continue;
+
+    let best: Medtech | null = null;
+    let bestScore = 0;
+    let tie = false;
+    for (const { medtech, tokens: mtTokens } of MEDTECH_TOKENS) {
+      const score = tokens.filter((t) => mtTokens.has(t)).length;
+      if (score > bestScore) { best = medtech; bestScore = score; tie = false; }
+      else if (score === bestScore && score > 0) { tie = true; }
+    }
+    if (best && !tie) return best;
+  }
+  return null;
+}
+
+// ── Patient / billing matching helpers ───────────────────────────────────────
+
+/**
+ * True when a stored patient_name refers to this patient. Records are linked by
+ * name (not id), and pages save names differently ("First Last" vs
+ * "First Middle Last"), so compare word tokens instead of exact strings:
+ * the record must contain the first + last name, and every other word in it
+ * must belong to the patient (e.g. their middle name).
+ */
+function nameMatchesPatient(recordName: string | null | undefined, patient: any): boolean {
+  if (!recordName || !patient) return false;
+  const required = [...nameTokens(patient.first_name), ...nameTokens(patient.last_name)];
+  if (required.length === 0) return false;
+  const allowed = new Set([...required, ...nameTokens(patient.middle_name)]);
+  const rec = nameTokens(recordName);
+  const recSet = new Set(rec);
+  return required.every((t) => recSet.has(t)) && rec.every((t) => allowed.has(t));
+}
+
+// Component results are billed under their parent test (mirrors lib/database.ts)
+const BILLING_PARENT_TESTS: Record<string, string[]> = {
+  HEMATOLOGY: ["Neutrophils", "Lymphocytes", "Monocytes", "Eosinophils", "Basophils"],
+  "CLINICAL MICROSCOPY": ["UA Color", "UA Transparency", "UA pH", "UA Protein/Glucose", "UA Bilirubin/Ketone", "UA Urobilinogen", "UA WBC (Microscopic)", "UA RBC (Microscopic)", "UA Bacteria/Casts/Crystals"],
+  MICROBIOLOGY: ["Culture", "Preliminary Report", "Final Report", "Sensitivity (Antibiogram)"],
+};
+const BILLING_PARENT_NAMES: Record<string, string> = {
+  HEMATOLOGY: "CBC",
+  "CLINICAL MICROSCOPY": "Routine Urinalysis (UA)",
+  MICROBIOLOGY: "Culture and Sensitivity",
+};
+
+type PaymentState = "paid" | "unpaid" | "no_billing";
+
+/**
+ * Payment state of ONE result, from the patient's billing rows:
+ * 1. a bill with the same test name, else
+ * 2. the parent-test bill for a component (e.g. Neutrophils -> CBC), else
+ * 3. bills in the same section (all must be paid), else
+ * 4. no billing record found.
+ */
+function paymentStateFor(result: any, allPatientBillings: any[]): PaymentState {
+  // When the result is linked to a request, only that request's bills (or old unlinked ones) count.
+  const patientBillings = result.test_request_id
+    ? allPatientBillings.filter((b) => !b.test_request_id || b.test_request_id === result.test_request_id)
+    : allPatientBillings;
+  const norm = (v?: string) => (v ?? "").trim().toLowerCase();
+  const decide = (rows: any[]): PaymentState | null =>
+    rows.length === 0 ? null : rows.some((b) => b.status === "paid") ? "paid" : "unpaid";
+
+  const exact = decide(patientBillings.filter((b) => norm(b.test_name) === norm(result.test_name)));
+  if (exact) return exact;
+
+  const isComponent = BILLING_PARENT_TESTS[result.section]?.includes(result.test_name);
+  if (isComponent) {
+    const parent = decide(patientBillings.filter((b) => norm(b.test_name) === norm(BILLING_PARENT_NAMES[result.section])));
+    if (parent) return parent;
+  }
+
+  const sameSection = patientBillings.filter((b) => norm(b.section) === norm(result.section));
+  if (sameSection.length > 0) return sameSection.every((b) => b.status === "paid") ? "paid" : "unpaid";
+
+  return "no_billing";
+}
+
 interface ReportData {
   patientId: string;
   patientName: string;
@@ -160,43 +282,109 @@ export default function PrintReportPage() {
   const [patientSearch, setPatientSearch] = useState<string>("");
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
 
+  // id/email (lowercase) -> full name, built from the profiles table if it exists
+  const [directory, setDirectory] = useState<Record<string, string>>({});
+
   // ── Selective release state ─────────────────────────────────────────────
   const [patientResults, setPatientResults] = useState<any[]>([]);
   const [selectedResultIds, setSelectedResultIds] = useState<Set<string>>(new Set());
 
   // ── Auto-resolved medtechs (no dropdowns) ───────────────────────────
-  const [medtech1, setMedtech1] = useState<typeof MEDTECH_LIST[0] | null>(null);
-  const [medtech2, setMedtech2] = useState<typeof MEDTECH_LIST[0] | null>(null);
+  const [medtech1, setMedtech1] = useState<Medtech | null>(null);
+  const [medtech2, setMedtech2] = useState<Medtech | null>(null);
+  const [medtechList, setMedtechList] = useState<Medtech[]>(MEDTECH_LIST);
+  const { user } = useAuth();
+  const [releasing, setReleasing] = useState(false);
 
-  // Match a full_name string from the DB to a MEDTECH_LIST entry.
-  // Uses last-name exact match first, then falls back to longest-part match,
-  // requiring the matched part to be at least 4 chars to avoid false positives.
-  const resolveMedtech = (fullName: string | undefined | null): typeof MEDTECH_LIST[0] | null => {
-    if (!fullName) return null;
-    const lower = fullName.toLowerCase().trim();
-    // Try exact full-name match first
-    const exact = MEDTECH_LIST.find((m) => m.displayName.toLowerCase().includes(lower));
-    if (exact) return exact;
-    // Fall back to matching on the longest word (≥4 chars) from the input name
-    const parts = lower.split(/\s+/).filter((p) => p.length >= 4).sort((a, b) => b.length - a.length);
-    for (const part of parts) {
-      const match = MEDTECH_LIST.find((m) => m.displayName.toLowerCase().includes(part));
-      if (match) return match;
+  // A record belongs to the patient by id when linked (migration 004), else by name.
+  const ofPatient = (rec: any, patient: any) =>
+    rec?.patient_id ? rec.patient_id === patient.id : nameMatchesPatient(rec?.patient_name ?? rec?.patientName, patient);
+  // True when staff picked the signatory because the stored name didn't match a MedTech
+  const [medtech1Manual, setMedtech1Manual] = useState(false);
+  const [medtech2Manual, setMedtech2Manual] = useState(false);
+  // Raw values found in the DB, shown in the warning boxes so you can see why resolving failed
+  const [medtech1Raw, setMedtech1Raw] = useState<string>("");
+  const [medtech2Raw, setMedtech2Raw] = useState<string>("");
+
+  // Find the test request for a patient: matches first + last name tokens (handles middle names,
+  // "LAST, FIRST" ordering), prefers rows that have created_by, newest first.
+  const findTestRequest = (patient: any) => {
+    // 1. The request the patient's results are linked to
+    const linkedIds = new Set(patientResults.map((r) => r.test_request_id).filter(Boolean));
+    const linked = testRequests.filter((tr) => linkedIds.has(tr.id));
+    if (linked.length > 0) {
+      return [...linked].sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime())[0];
     }
-    return null;
+    // 2. Test requests store patient_id, so use it; fall back to name for old rows.
+    const byId = testRequests.filter((tr) => tr.patient_id && tr.patient_id === patient.id);
+    const matches = byId.length > 0
+      ? byId
+      : testRequests.filter((tr) => nameMatchesPatient(tr.patient_name, patient));
+    matches.sort((a, b) => {
+      const aHas = a.created_by ? 1 : 0;
+      const bHas = b.created_by ? 1 : 0;
+      if (aHas !== bHas) return bHas - aHas;
+      return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
+    });
+    return matches[0];
+  };
+
+  // Loads everything the report depends on. Called on mount and again whenever
+  // a patient is picked, so approvals/QC/payments made elsewhere are picked up.
+  const loadReportData = async () => {
+      const [pts, results, bills] = await Promise.all([fetchPatients(), fetchTestResults(), fetchBilling()]);
+      setPatients(pts);
+      setTestResults(results);
+      setBillings(bills);
+
+      const { data: qcData, error: qcError } = await supabase.from("quality_checks").select("*");
+      if (qcError) console.error("[quality_checks] query error:", qcError);
+      setQualityChecks(qcData || []);
+
+      // select("*") so a wrong/missing column name can't make the whole query fail silently
+      const { data: trData, error: trError } = await supabase.from("test_requests").select("*");
+      if (trError) console.error("[test_requests] query error:", trError);
+      setTestRequests(trData || []);
+
+      // Staff directory (id/email -> full name) and signatories, from the users table.
+      try {
+        const { data: staff, error: staffError } = await supabase.from("users").select("*");
+        if (staffError) {
+          console.warn("[users] lookup skipped:", staffError.message);
+        } else if (staff) {
+          const map: Record<string, string> = {};
+          for (const p of staff as any[]) {
+            if (!p.full_name) continue;
+            for (const key of [p.id, p.email]) {
+              if (key) map[String(key).toLowerCase()] = p.full_name;
+            }
+          }
+          setDirectory(map);
+          const signatories: Medtech[] = (staff as any[])
+            .filter((u) => u.signatory_name && u.role !== "doctor" && u.role !== "admin")
+            .map((u) => ({
+              id: u.id,
+              displayName: u.signatory_name,
+              license: u.license_no || "",
+              signatureFile: u.signature_file || "",
+            }));
+          if (signatories.length > 0) setMedtechList(signatories);
+        }
+      } catch (e) {
+        console.warn("[profiles] lookup skipped:", e);
+      }
   };
 
   useEffect(() => {
-    (async () => {
-      setPatients(await fetchPatients());
-      setTestResults(await fetchTestResults());
-      setBillings(await fetchBilling());
-      const { data: qcData } = await supabase.from("quality_checks").select("*");
-      setQualityChecks(qcData || []);
-      const { data: trData } = await supabase.from("test_requests").select("id, patient_name, created_by");
-      setTestRequests(trData || []);
-    })();
+    loadReportData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fresh data every time a patient is selected
+  useEffect(() => {
+    if (selectedPatientId) loadReportData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPatientId]);
 
   // When a patient is selected, populate their approved/released results for the checklist
   useEffect(() => {
@@ -207,9 +395,8 @@ export default function PrintReportPage() {
     }
     const patient = patients.find((p) => p.id === selectedPatientId);
     if (!patient) return;
-    const fullName = `${patient.first_name} ${patient.last_name}`;
     const eligible = testResults.filter(
-      (r) => r.patient_name === fullName && (r.status === "approved" || r.status === "released")
+      (r) => ofPatient(r, patient) && (r.status === "approved" || r.status === "released")
     );
     setPatientResults(eligible);
     // Default: select all eligible results
@@ -223,23 +410,36 @@ export default function PrintReportPage() {
     if (!selectedPatientId || patientResults.length === 0) {
       setMedtech1(null);
       setMedtech2(null);
+      setMedtech1Raw("");
+      setMedtech2Raw("");
       return;
     }
     const patient = patients.find((p) => p.id === selectedPatientId);
     if (!patient) return;
-    const fullName = `${patient.first_name} ${patient.last_name}`;
 
     // Junior medtech: from test_requests.created_by
-    const testRequest = testRequests.find(
-      (tr) => tr.patient_name?.toLowerCase() === fullName.toLowerCase()
-    );
-    setMedtech1(resolveMedtech(testRequest?.created_by));
+    const testRequest = findTestRequest(patient);
+    const createdBy = testRequest?.created_by ?? "";
 
-    // Senior medtech: from quality_checks.checked_by
+    // Senior medtech: from quality_checks.checked_by (newest check wins)
     const resultIds = patientResults.map((r) => r.id);
-    const qc = qualityChecks.find((q) => resultIds.includes(q.test_result_id) && q.checked_by);
-    setMedtech2(resolveMedtech(qc?.checked_by));
-  }, [selectedPatientId, patientResults, testRequests, qualityChecks, patients]);
+    const qc = qualityChecks
+      .filter((q) => resultIds.includes(q.test_result_id) && q.checked_by)
+      .sort((a, b) => new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime())[0];
+    const checkedBy = qc?.checked_by ?? "";
+
+    console.log("[medtech] patient:", `${patient.first_name} ${patient.last_name}`);
+    console.log("[medtech] testRequests loaded:", testRequests.length, "| qualityChecks loaded:", qualityChecks.length);
+    console.log("[medtech] matched testRequest:", testRequest);
+    console.log("[medtech] created_by:", createdBy, "| checked_by:", checkedBy);
+
+    setMedtech1Raw(String(createdBy));
+    setMedtech2Raw(String(checkedBy));
+    setMedtech1(resolveMedtechValue(createdBy, directory, medtechList));
+    setMedtech2(resolveMedtechValue(checkedBy, directory, medtechList));
+    setMedtech1Manual(false);
+    setMedtech2Manual(false);
+  }, [selectedPatientId, patientResults, testRequests, qualityChecks, patients, directory, medtechList]);
 
   const formatDate = (d: Date) =>
     `${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}-${d.getFullYear()}`;
@@ -254,34 +454,17 @@ export default function PrintReportPage() {
   const buildReportData = (patientId: string): ReportData | null => {
     const patient = patients.find((p) => p.id === patientId);
     if (!patient) return null;
-    const patientFullName = `${patient.first_name} ${patient.last_name}`;
 
     // Only include results the staff selected
     const chosenResults = patientResults.filter((r) => selectedResultIds.has(r.id));
 
-    const patientBillings = billings.filter(
-      (b) => b.patient_name === patientFullName || b.patientName === patientFullName
-    );
-    // Fix: check that every selected result has a corresponding paid billing entry,
-    // not just that any billing record for the patient is paid.
-    const chosenResultIds = new Set(chosenResults.map((r) => r.id));
-    const paidResultIds = new Set(
-      patientBillings
-        .filter((b) => b.status === "paid")
-        .flatMap((b) => b.test_result_ids ?? (b.test_result_id ? [b.test_result_id] : []))
-    );
-    // Fall back to patient-level check if billing records have no per-test IDs
-    const billingIsPerTest = patientBillings.some((b) => b.test_result_ids || b.test_result_id);
-    const allTestsPaid = chosenResults.length > 0 && (
-      billingIsPerTest
-        ? [...chosenResultIds].every((id) => paidResultIds.has(id))
-        : patientBillings.some((b) => b.status === "paid")
-    );
+    // Every selected result must be paid, not just any bill of the patient
+    const patientBillings = billings.filter((b) => ofPatient(b, patient));
+    const allTestsPaid =
+      chosenResults.length > 0 && chosenResults.every((r) => paymentStateFor(r, patientBillings) === "paid");
 
     // Pull actual timestamps from DB records
-    const testRequest = testRequests.find(
-      (tr) => tr.patient_name?.toLowerCase() === patientFullName.toLowerCase()
-    );
+    const testRequest = findTestRequest(patient);
     const earliestResult = chosenResults.reduce((earliest: any, r: any) => {
       if (!earliest) return r;
       return new Date(r.created_at) < new Date(earliest.created_at) ? r : earliest;
@@ -312,7 +495,7 @@ export default function PrintReportPage() {
       province: patient.province,
       address: [patient.address_house_no, patient.address_street, patient.address_barangay, patient.municipality, patient.province]
         .filter(Boolean).join(", "),
-      physician: "N/A",
+      physician: testRequest?.requesting_physician?.trim() || "N/A",
       dateRequested,
       dateReceived,
       tests: chosenResults.length > 0
@@ -334,13 +517,25 @@ export default function PrintReportPage() {
   const getPatientQCStatus = (patientId: string): "eligible" | "pending" | "failed" | "no_results" => {
     const patient = patients.find((p) => p.id === patientId);
     if (!patient) return "no_results";
-    const fullName = `${patient.first_name} ${patient.last_name}`;
-    const patientTestResults = testResults.filter(
-      (r) => r.patient_name === fullName && (r.status === "approved" || r.status === "released")
-    );
-    if (patientTestResults.length === 0) return "no_results";
+    const allResults = testResults.filter((r) => ofPatient(r, patient));
+    if (allResults.length === 0) return "no_results";
+    const patientTestResults = allResults.filter((r) => r.status === "approved" || r.status === "released");
+    if (patientTestResults.length === 0) {
+      // Nothing verified yet: either waiting for QC, or returned for correction
+      return allResults.some((r) => r.status === "encoding") && !allResults.some((r) => r.status === "for_verification")
+        ? "failed"
+        : "pending";
+    }
+    // Newest QC check per result wins (a FAIL later re-checked as PASS counts as PASS)
     const qcMap: Record<string, string> = {};
-    for (const qc of qualityChecks) { qcMap[qc.test_result_id] = qc.qc_result; }
+    const qcTime: Record<string, number> = {};
+    for (const qc of qualityChecks) {
+      const t = new Date(qc.created_at ?? 0).getTime();
+      if (qcTime[qc.test_result_id] === undefined || t >= qcTime[qc.test_result_id]) {
+        qcTime[qc.test_result_id] = t;
+        qcMap[qc.test_result_id] = qc.qc_result;
+      }
+    }
     let hasFail = false, hasPending = false;
     for (const r of patientTestResults) {
       // Released results are already approved — skip QC check for them
@@ -356,26 +551,61 @@ export default function PrintReportPage() {
 
   const selectedQCStatus = selectedPatientId ? getPatientQCStatus(selectedPatientId) : null;
 
-  // ── Payment check: is there at least one paid billing record for this patient? ──
-  const selectedUnpaidTests = (() => {
+  // Where each of the selected patient's results is in the pipeline
+  const selectedProgress = (() => {
+    const patient = patients.find((p) => p.id === selectedPatientId);
+    if (!patient) return null;
+    const all = testResults.filter((r) => ofPatient(r, patient));
+    const latestQc: Record<string, any> = {};
+    for (const q of qualityChecks) {
+      const prev = latestQc[q.test_result_id];
+      if (!prev || new Date(q.created_at ?? 0) >= new Date(prev.created_at ?? 0)) latestQc[q.test_result_id] = q;
+    }
+    return {
+      total: all.length,
+      waiting: all.filter((r) => r.status === "for_verification" || r.status === "pending"),
+      returned: all.filter((r) => r.status === "encoding").map((r) => ({ ...r, qc: latestQc[r.id] })),
+      approved: all.filter((r) => r.status === "approved"),
+      released: all.filter((r) => r.status === "released"),
+    };
+  })();
+
+  // ── Payment check: every SELECTED result must be paid ──
+  const selectedUnpaidTests: any[] = (() => {
     if (!selectedPatientId || selectedResultIds.size === 0) return [];
     const patient = patients.find((p) => p.id === selectedPatientId);
     if (!patient) return [];
-    const fullName = `${patient.first_name} ${patient.last_name}`;
-    const patientBillings = billings.filter(
-      (b) => b.patient_name === fullName || b.patientName === fullName
-    );
-    // If there is ANY paid billing record for this patient, treat as paid
-    const hasPaidBilling = patientBillings.some((b) => b.status === "paid");
-    if (hasPaidBilling) return [];
-    // Otherwise every selected result is "unpaid"
-    return patientResults.filter((r) => selectedResultIds.has(r.id));
+    const patientBillings = billings.filter((b) => ofPatient(b, patient));
+    return patientResults
+      .filter((r) => selectedResultIds.has(r.id))
+      .map((r) => ({ ...r, paymentState: paymentStateFor(r, patientBillings) }))
+      .filter((r) => r.paymentState !== "paid");
   })();
   const hasUnpaid = selectedUnpaidTests.length > 0;
+
+  // After the print dialog closes, confirm and mark the printed results as Released.
+  // (Browsers don't report whether printing actually happened, so we ask.)
+  const releaseAfterPrint = async () => {
+    if (!isSeniorMedtech(user)) return; // only Senior MedTechs release (also enforced in the database)
+    const toRelease = patientResults
+      .filter((r) => selectedResultIds.has(r.id) && r.status !== "released")
+      .map((r) => r.id);
+    if (toRelease.length === 0) return;
+    const ok = window.confirm(
+      `Was the report printed successfully?\n\nClick OK to mark ${toRelease.length} result(s) as RELEASED. ` +
+      `Released results become visible to the requesting doctor.`
+    );
+    if (!ok) return;
+    setReleasing(true);
+    await releaseTestResults(toRelease, user);
+    await loadReportData();
+    setReleasing(false);
+  };
 
   const handlePrint = useReactToPrint({
     contentRef: reportContentRef,
     documentTitle: "CogniLab Laboratory Report",
+    onAfterPrint: releaseAfterPrint,
   });
 
   const togglePreview = () => {
@@ -510,9 +740,36 @@ export default function PrintReportPage() {
                 )}
               </div>
 
-              {selectedPatientId && selectedQCStatus !== "eligible" && (
-                <div className={`mt-2 flex items-start gap-2 px-3 py-2.5 rounded-lg text-xs font-medium ${selectedQCStatus === "failed" ? "bg-red-50 border border-red-200 text-red-700" : selectedQCStatus === "pending" ? "bg-yellow-50 border border-yellow-200 text-yellow-700" : "bg-gray-50 border border-gray-200 text-gray-500"}`}>
-                  {selectedQCStatus === "failed" ? "⛔ This patient has failed QC checks. Results must be corrected and re-checked before a report can be generated." : selectedQCStatus === "pending" ? "⏳ This patient's test results have not been fully reviewed in Quality Checking yet." : "ℹ️ No test results found for this patient."}
+              {selectedPatientId && selectedProgress && (
+                <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs space-y-2">
+                  <p className="font-bold text-gray-700 uppercase tracking-wide">Release checklist</p>
+                  {selectedProgress.total === 0 ? (
+                    <p className="text-gray-500">ℹ️ No test results have been encoded for this patient yet.</p>
+                  ) : (
+                    <ol className="space-y-1.5">
+                      <li className="text-green-700">✓ 1. Results encoded ({selectedProgress.total})</li>
+                      <li className={selectedProgress.waiting.length || selectedProgress.returned.length ? "text-yellow-700" : "text-green-700"}>
+                        {selectedProgress.waiting.length || selectedProgress.returned.length ? "⏳" : "✓"} 2. Verified by a Senior MedTech
+                        {selectedProgress.waiting.length > 0 && (
+                          <span className="block ml-5 text-yellow-700">
+                            {selectedProgress.waiting.length} waiting in Quality Checking: {selectedProgress.waiting.map((r) => r.test_name).join(", ")}
+                          </span>
+                        )}
+                        {selectedProgress.returned.map((r) => (
+                          <span key={r.id} className="block ml-5 text-red-700">
+                            ⛔ {r.test_name} returned for correction{r.qc ? ` by ${r.qc.checked_by}` : ""}{r.qc?.comments ? `: “${r.qc.comments}”` : ""} — fix it in Test Results
+                          </span>
+                        ))}
+                      </li>
+                      <li className={hasUnpaid ? "text-red-700" : "text-green-700"}>
+                        {hasUnpaid ? "⛔" : "✓"} 3. Paid {hasUnpaid ? "— see unpaid tests below" : ""}
+                      </li>
+                      <li className={selectedProgress.approved.length ? "text-green-700" : "text-gray-500"}>
+                        {selectedProgress.approved.length ? "✓" : "•"} 4. Ready to release: {selectedProgress.approved.length} result(s)
+                        {selectedProgress.released.length > 0 && <span className="text-gray-500"> · {selectedProgress.released.length} already released</span>}
+                      </li>
+                    </ol>
+                  )}
                 </div>
               )}
             </div>
@@ -606,10 +863,13 @@ export default function PrintReportPage() {
                 <p className="text-xs text-red-600 mb-1">The following selected test(s) are not yet paid:</p>
                 <ul className="text-xs text-red-600 list-disc list-inside space-y-0.5">
                   {selectedUnpaidTests.map((r: any) => (
-                    <li key={r.id}>{r.test_name} <span className="text-red-400">({r.section})</span></li>
+                    <li key={r.id}>
+                      {r.test_name} <span className="text-red-400">({r.section})</span>
+                      {r.paymentState === "no_billing" && <span className="text-red-400"> — no billing record found</span>}
+                    </li>
                   ))}
                 </ul>
-                <p className="text-xs text-red-500 mt-1">Please settle the balance in Billing before releasing.</p>
+                <p className="text-xs text-red-500 mt-1">Please settle the balance in Billing before releasing, or untick these tests to print the rest.</p>
               </div>
             )}
 
@@ -626,36 +886,89 @@ export default function PrintReportPage() {
                 </div>
 
                 {/* Junior MedTech — auto from test_requests.created_by */}
-                <div className={`p-3 rounded-lg border ${medtech1 ? "bg-[#F0F4F1] border-[#CBDED3]" : "bg-yellow-50 border-yellow-200"}`}>
+                <div className={`p-3 rounded-lg border ${medtech1 && !medtech1Manual ? "bg-[#F0F4F1] border-[#CBDED3]" : "bg-yellow-50 border-yellow-200"}`}>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Medical Technologist (Encoder)</p>
-                  {medtech1 ? (
+                  {medtech1 && !medtech1Manual ? (
                     <>
                       <p className="text-sm font-bold text-gray-800">{medtech1.displayName}</p>
                       <p className="text-xs text-gray-400">{medtech1.license}</p>
                     </>
                   ) : (
-                    <p className="text-xs text-yellow-700 italic">Could not resolve — no created_by found in test request.</p>
+                    <>
+                      <p className="text-xs text-yellow-700">
+                        {medtech1Raw
+                          ? <>Recorded as <span className="font-mono">&quot;{medtech1Raw}&quot;</span>, which is not a registered MedTech. Select who actually performed it:</>
+                          : <>(empty — no matching test request, or the column is blank) Select who performed it:</>}
+                      </p>
+                      <select
+                        value={medtech1?.id ?? ""}
+                        onChange={(e) => {
+                          const m = medtechList.find((x) => x.id === e.target.value) ?? null;
+                          setMedtech1(m);
+                          setMedtech1Manual(true);
+                        }}
+                        className="mt-2 w-full px-3 py-2 border border-yellow-300 rounded-lg text-sm text-gray-800 bg-white"
+                      >
+                        <option value="">Select medical technologist…</option>
+                        {medtechList.filter((m) => m.id !== medtech2?.id).map((m) => (
+                          <option key={m.id} value={m.id}>{m.displayName}</option>
+                        ))}
+                      </select>
+                    </>
                   )}
                 </div>
 
                 {/* Senior MedTech — auto from quality_checks.checked_by */}
-                <div className={`p-3 rounded-lg border ${medtech2 ? "bg-[#F0F4F1] border-[#CBDED3]" : "bg-yellow-50 border-yellow-200"}`}>
+                <div className={`p-3 rounded-lg border ${medtech2 && !medtech2Manual ? "bg-[#F0F4F1] border-[#CBDED3]" : "bg-yellow-50 border-yellow-200"}`}>
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Medical Technologist (Quality Check)</p>
-                  {medtech2 ? (
+                  {medtech2 && !medtech2Manual ? (
                     <>
                       <p className="text-sm font-bold text-gray-800">{medtech2.displayName}</p>
                       <p className="text-xs text-gray-400">{medtech2.license}</p>
                     </>
                   ) : (
-                    <p className="text-xs text-yellow-700 italic">Could not resolve — no checked_by found in quality check.</p>
+                    <>
+                      <p className="text-xs text-yellow-700">
+                        {medtech2Raw
+                          ? <>Recorded as <span className="font-mono">&quot;{medtech2Raw}&quot;</span>, which is not a registered MedTech. Select who actually performed it:</>
+                          : <>(empty — no quality check found for these results) Select who performed it:</>}
+                      </p>
+                      <select
+                        value={medtech2?.id ?? ""}
+                        onChange={(e) => {
+                          const m = medtechList.find((x) => x.id === e.target.value) ?? null;
+                          setMedtech2(m);
+                          setMedtech2Manual(true);
+                        }}
+                        className="mt-2 w-full px-3 py-2 border border-yellow-300 rounded-lg text-sm text-gray-800 bg-white"
+                      >
+                        <option value="">Select medical technologist…</option>
+                        {medtechList.filter((m) => m.id !== medtech1?.id).map((m) => (
+                          <option key={m.id} value={m.id}>{m.displayName}</option>
+                        ))}
+                      </select>
+                    </>
                   )}
                 </div>
 
+                {!isSeniorMedtech(user) && (
+                  <p className="text-xs text-center text-amber-700 font-medium bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    🔒 Only a Senior MedTech can print and release reports. You can preview this report;
+                    ask a Senior MedTech (e.g. Ryza or Xavier) to release it.
+                  </p>
+                )}
+                {(!medtech1 || !medtech2) && (
+                  <p className="text-xs text-center text-amber-600 font-medium">Both medical technologists are required before printing.</p>
+                )}
+                {medtech1 && medtech2 && medtech1.id === medtech2.id && (
+                  <p className="text-xs text-center text-red-600 font-medium">The encoder and the quality checker must be different people.</p>
+                )}
                 <button
                   onClick={handlePrint}
-                  className="w-full px-8 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-200 font-bold text-lg flex items-center justify-center gap-3 border border-blue-400"
+                  disabled={!isSeniorMedtech(user) || !medtech1 || !medtech2 || medtech1.id === medtech2.id}
+                  className="w-full px-8 py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:shadow-2xl hover:scale-105 active:scale-95 transition-all duration-200 font-bold text-lg flex items-center justify-center gap-3 border border-blue-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
                 >
-                  <Printer className="w-6 h-6" /> Print Report
+                  <Printer className="w-6 h-6" /> {releasing ? "Releasing…" : "Print Report"}
                 </button>
               </div>
             )}
@@ -849,8 +1162,6 @@ export default function PrintReportPage() {
                     <span>↓↓ - Alert Value Low</span>
                   </div>
                 )}
-
-
 
                 {/* ── SIGNATURE SECTION ── */}
                 <div style={{ borderTop: "1.5px solid #000", paddingTop: "8px", fontFamily: "Arial, sans-serif" }}>

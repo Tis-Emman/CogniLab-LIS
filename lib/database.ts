@@ -200,7 +200,7 @@ export const fetchUsers = async () => {
 export const addUser = async (user: {
   full_name: string;
   email: string;
-  role: 'member' | 'faculty';
+  role: string;
   department: string;
 }) => {
   const encryptionKey = `ENC_KEY_${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
@@ -439,6 +439,114 @@ export const fetchTestResults = async () => {
   });
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// RECORD LINKING (migration 004): results and billing carry patient_id and
+// test_request_id so they no longer depend on matching the patient's name.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LINK_FIELDS = ['patient_id', 'test_request_id'] as const;
+
+const normName = (s?: string | null) =>
+  (s ?? '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+
+/** True when a stored name refers to this patient, with or without the middle name. */
+export const nameMatchesPatient = (name: string | null | undefined, p: any): boolean => {
+  if (!name || !p) return false;
+  const required = [...normName(p.first_name), ...normName(p.last_name)];
+  if (required.length === 0) return false;
+  const allowed = new Set([...required, ...normName(p.middle_name)]);
+  const rec = normName(name);
+  const recSet = new Set(rec);
+  return required.every(t => recSet.has(t)) && rec.every(t => allowed.has(t));
+};
+
+/**
+ * Finds the patient (by name) and their newest open test request that includes
+ * this lab section. Used when a page only knows the patient's name.
+ */
+export const resolveRecordLinks = async (
+  patientName: string,
+  section?: string,
+): Promise<{ patient_id?: string; test_request_id?: string }> => {
+  if (USE_MOCK_DATA || !patientName) return {};
+  const { data: pts } = await supabase.from('patients').select('id, first_name, middle_name, last_name');
+  const matches = (pts || []).filter(p => nameMatchesPatient(patientName, p));
+  if (matches.length !== 1) return {}; // none or ambiguous
+  const patient_id = matches[0].id as string;
+
+  const { data: reqs } = await supabase
+    .from('test_requests')
+    .select('id, status, requested_tests, created_at')
+    .eq('patient_id', patient_id)
+    .order('created_at', { ascending: false });
+  const open = (reqs || []).filter(r => r.status !== 'cancelled' && r.status !== 'completed');
+  const pool = open.length ? open : reqs || [];
+  const bySection = section
+    ? pool.find(r => (r.requested_tests || []).some((t: any) => (t.section || '').toUpperCase() === section.toUpperCase()))
+    : undefined;
+  const req = bySection ?? pool[0];
+  return { patient_id, test_request_id: req?.id };
+};
+
+/** Insert that still works before migration 004 adds the link columns. */
+const insertWithLinks = async (table: string, row: Record<string, any>) => {
+  const res = await supabase.from(table).insert([row]).select();
+  if (res.error && /patient_id|test_request_id/.test(res.error.message)) {
+    console.warn(`[${table}] link columns missing; run migration 004. Saving without links.`);
+    const stripped = { ...row };
+    LINK_FIELDS.forEach(k => delete stripped[k]);
+    return supabase.from(table).insert([stripped]).select();
+  }
+  return res;
+};
+
+/**
+ * Moves a test request forward automatically:
+ *  - pending → in_progress once any result exists for it
+ *  - → completed once every one of its results is released
+ */
+export const syncTestRequestStatus = async (testRequestId?: string | null) => {
+  if (USE_MOCK_DATA || !testRequestId) return;
+  const [{ data: req }, { data: results }] = await Promise.all([
+    supabase.from('test_requests').select('id, status').eq('id', testRequestId).maybeSingle(),
+    supabase.from('test_results').select('status').eq('test_request_id', testRequestId),
+  ]);
+  if (!req || req.status === 'cancelled') return;
+  let next = req.status;
+  if (results && results.length > 0) {
+    next = results.every(r => r.status === 'released') ? 'completed' : 'in_progress';
+  }
+  if (next !== req.status) {
+    await supabase.from('test_requests').update({ status: next }).eq('id', testRequestId);
+  }
+};
+
+/** Marks results as released (called when a report is printed) and syncs their requests. */
+export const releaseTestResults = async (resultIds: string[], currentUser?: any) => {
+  if (USE_MOCK_DATA || resultIds.length === 0) return;
+  const { data, error } = await supabase
+    .from('test_results')
+    .update({ status: 'released', updated_at: new Date().toISOString() })
+    .in('id', resultIds)
+    .select('id, test_name, patient_name, test_request_id');
+  if (error) {
+    console.error('Error releasing results:', error.message);
+    return;
+  }
+  const requestIds = [...new Set((data || []).map(r => r.test_request_id).filter(Boolean))];
+  await Promise.all(requestIds.map(id => syncTestRequestStatus(id)));
+  const first = data?.[0];
+  await logActivity({
+    user_id: currentUser?.id,
+    user_name: currentUser?.full_name || 'Unknown User',
+    encryption_key: currentUser?.encryption_key || '',
+    action: 'edit',
+    resource: `Report - ${first?.patient_name ?? ''}`,
+    resource_type: 'Test Result',
+    description: `Released ${data?.length ?? 0} result(s) for ${first?.patient_name ?? 'patient'} by printing the report`,
+  });
+};
+
 const BILLING_PARENT_TESTS: Record<string, string[]> = {
   HEMATOLOGY: ['Neutrophils', 'Lymphocytes', 'Monocytes', 'Eosinophils', 'Basophils'],
   'CLINICAL MICROSCOPY': ['UA Color', 'UA Transparency', 'UA pH', 'UA Protein/Glucose', 'UA Bilirubin/Ketone', 'UA Urobilinogen', 'UA WBC (Microscopic)', 'UA RBC (Microscopic)', 'UA Bacteria/Casts/Crystals'],
@@ -517,14 +625,36 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
   }
 
   // ── REAL SUPABASE PATH ──────────────────────────────────────────────────
-  const { data, error } = await supabase
-    .from('test_results')
-    .insert([result])
-    .select();
-  
+  // Link the result to its patient + test request when the page didn't.
+  const links = result.patient_id && result.test_request_id
+    ? {}
+    : await resolveRecordLinks(result.patient_name, result.section);
+  // A newly encoded result goes straight to the senior MedTech for verification.
+  const row = { ...links, ...result, status: result.status || 'for_verification' };
+
+  const { data, error } = await insertWithLinks('test_results', row);
+
   if (error) {
     console.error('Error adding test result:', error);
     return null;
+  }
+
+  // A result now exists, so the request is at least in progress.
+  await syncTestRequestStatus(row.test_request_id);
+
+  // Billing is created once, at test-request time. Only walk-in results that
+  // have no test request get billed here.
+  if (row.test_request_id) {
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || '',
+      action: 'edit',
+      resource: `${result.test_name} - ${result.patient_name}`,
+      resource_type: 'Test Result',
+      description: `Created test result: ${result.test_name} for patient ${result.patient_name} in section ${result.section}`,
+    });
+    return data?.[0] || null;
   }
 
   if (data?.[0]) {
@@ -555,9 +685,8 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
     const shouldCreateBilling = !isComponent && !existingBilling && (!skipBilling || !anyPatientBilling);
 
     if (shouldCreateBilling) {
-      const { error: billingError } = await supabase
-        .from('billing')
-        .insert([{
+      const { error: billingError } = await insertWithLinks('billing', {
+          patient_id: row.patient_id,
           patient_name: result.patient_name,
           test_name: result.test_name,
           section: result.section,
@@ -565,7 +694,7 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
           status: 'unpaid',
           description: `Lab test: ${result.test_name}`,
           date_created: new Date().toISOString().split('T')[0],
-        }]);
+        });
 
       if (billingError) {
         console.error('Error creating billing record:', billingError);
@@ -617,6 +746,16 @@ export const updateTestResult = async (id: string, result: any, currentUser?: an
     .eq('id', id)
     .single();
 
+  // Re-encoding a result that was returned by QC (or never submitted) sends it
+  // back to the senior MedTech for verification automatically.
+  if (
+    result.result_value !== undefined &&
+    !result.status &&
+    oldData && ['pending', 'encoding'].includes(oldData.status)
+  ) {
+    result = { ...result, status: 'for_verification' };
+  }
+
   const { data, error } = await supabase
     .from('test_results')
     .update(result)
@@ -626,6 +765,10 @@ export const updateTestResult = async (id: string, result: any, currentUser?: an
   if (error) {
     console.error('Error updating test result:', error);
     return null;
+  }
+
+  if (data?.[0]?.test_request_id && result.status) {
+    await syncTestRequestStatus(data[0].test_request_id);
   }
 
   if (data?.[0] && result.status && result.status !== oldData?.status) {
@@ -689,6 +832,8 @@ export const fetchBilling = async () => {
 };
 
 export const addBilling = async (billing: {
+  patient_id?: string | null;
+  test_request_id?: string | null;
   patient_name: string;
   test_name: string;
   section: string;
@@ -712,19 +857,16 @@ export const addBilling = async (billing: {
     return newBilling;
   }
 
-  const { data, error } = await supabase
-    .from('billing')
-    .insert([
-      {
-        patient_name: billing.patient_name,
-        test_name: billing.test_name,
-        section: billing.section,
-        amount: billing.amount,
-        description: billing.description || `${billing.test_name} - ${billing.section}`,
-        status: 'unpaid',
-      },
-    ])
-    .select();
+  const { data, error } = await insertWithLinks('billing', {
+    patient_id: billing.patient_id ?? null,
+    test_request_id: billing.test_request_id ?? null,
+    patient_name: billing.patient_name,
+    test_name: billing.test_name,
+    section: billing.section,
+    amount: billing.amount,
+    description: billing.description || `${billing.test_name} - ${billing.section}`,
+    status: 'unpaid',
+  });
 
   if (error) {
     console.error('Error adding billing:', error);

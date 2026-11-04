@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
 import { AlertCircle, LogIn, Loader, Eye, EyeOff } from 'lucide-react';
 import Image from 'next/image';
+import { homePathForRole } from '@/lib/roles';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,7 +31,7 @@ export default function LoginPage() {
   // Redirect to dashboard if already logged in
   useEffect(() => {
     if (!authLoading && user) {
-      router.push('/dashboard');
+      router.push(homePathForRole(user.role));
     }
   }, [user, authLoading, router]);
 
@@ -48,8 +49,7 @@ export default function LoginPage() {
       } else {
         localStorage.removeItem('cognilab_remembered_email');
       }
-      
-      router.push('/dashboard');
+      // Redirect happens in the effect above once the profile (and role) is loaded.
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check your credentials.');
     } finally {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
 import Sidebar from '@/components/Sidebar';
 import { Loader } from 'lucide-react';
+import { isDoctor, isAdmin } from '@/lib/roles';
 
 export default function DashboardLayout({
   children,
@@ -29,6 +30,12 @@ export default function DashboardLayout({
   useEffect(() => {
     if (!loading && !user) {
       router.push('/login');
+    } else if (!loading && isDoctor(user)) {
+      // Doctors have their own portal and must not see lab staff pages.
+      router.push('/doctor');
+    } else if (!loading && isAdmin(user)) {
+      // Separation of duties: administrators manage the system, not lab work.
+      router.push('/admin');
     }
   }, [user, loading, router]);
 
@@ -43,7 +50,7 @@ export default function DashboardLayout({
     );
   }
 
-  if (!user) {
+  if (!user || isDoctor(user) || isAdmin(user)) {
     return null;
   }
 

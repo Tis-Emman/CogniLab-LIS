@@ -22,6 +22,7 @@ import { fetchPatients, addBilling, getTestPrice } from "@/lib/database";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/authContext";
 import { logActivity } from "@/lib/database";
+import PhysicianPicker from "@/components/PhysicianPicker";
 
 // ─── Constants (mirrors your existing LAB_SECTIONS / TESTS_BY_SECTION) ────────
 
@@ -130,6 +131,9 @@ interface Patient {
   birthdate?: string;
   sex?: string;
   patient_id_no?: string;
+  municipality?: string;
+  province?: string;
+  address_barangay?: string;
 }
 
 interface RequestedTest {
@@ -142,6 +146,7 @@ interface TestRequest {
   patient_id: string;
   patient_name: string;
   requesting_physician: string;
+  doctor_id?: string | null;
   requested_tests: RequestedTest[];
   sample_collection_datetime: string;
   status: "pending" | "in_progress" | "completed" | "cancelled";
@@ -355,6 +360,7 @@ export default function TestRequestPage() {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
   const [physician, setPhysician] = useState("");
+  const [physicianDoctorId, setPhysicianDoctorId] = useState<string | null>(null);
   const [notes, setNotes] = useState("");
   const [selectedSection, setSelectedSection] = useState(LAB_SECTIONS[0]);
   const [requestedTests, setRequestedTests] = useState<RequestedTest[]>([]);
@@ -457,6 +463,8 @@ export default function TestRequestPage() {
       patient_id: selectedPatient.id,
       patient_name: getPatientFullName(selectedPatient),
       requesting_physician: physician.trim(),
+      // Only send doctor_id when a predefined doctor was picked (column added by migration 001)
+      ...(physicianDoctorId ? { doctor_id: physicianDoctorId } : {}),
       requested_tests: requestedTests,
       sample_collection_datetime: new Date().toISOString(),
       status: "pending" as const,
@@ -476,6 +484,8 @@ export default function TestRequestPage() {
     for (const t of requestedTests) {
       const price = getTestPrice(t.test_name, t.section) ?? 300;
       await addBilling({
+        patient_id: selectedPatient.id,
+        test_request_id: result.id,
         patient_name: payload.patient_name,
         test_name: t.test_name,
         section: t.section,
@@ -494,6 +504,7 @@ export default function TestRequestPage() {
     setSelectedPatient(null);
     setPatientSearch("");
     setPhysician("");
+    setPhysicianDoctorId(null);
     setNotes("");
     setRequestedTests([]);
     setSelectedSection(LAB_SECTIONS[0]);
@@ -682,19 +693,12 @@ export default function TestRequestPage() {
             </div>
 
             {/* Requesting Physician */}
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                <Stethoscope className="w-4 h-4 inline mr-1" />
-                Requesting Physician <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={physician}
-                onChange={(e) => setPhysician(e.target.value)}
-                placeholder="e.g. Dr. Juan Dela Cruz"
-                className={inputCls}
-              />
-            </div>
+            <PhysicianPicker
+              barangay={selectedPatient?.address_barangay}
+              value={{ doctorId: physicianDoctorId, name: physician }}
+              onChange={(v) => { setPhysicianDoctorId(v.doctorId); setPhysician(v.name); }}
+              className={inputCls}
+            />
 
             {/* Notes */}
             <div>

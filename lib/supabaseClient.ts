@@ -9,8 +9,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    persistSession: false,
-    autoRefreshToken: false,
+    // Keep the session in localStorage and refresh the access token before it
+    // expires. With these off, the token was never renewed (~1h lifetime) and
+    // every query failed once the tab came back from the background.
+    persistSession: true,
+    autoRefreshToken: true,
     detectSessionInUrl: true,
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
   },

@@ -28,17 +28,38 @@ import {
 } from "@/lib/database";
 import { TEST_REFERENCE_RANGES } from "@/lib/mockData";
 import { useAuth } from "@/lib/authContext";
+import { supabase } from "@/lib/supabaseClient";
 
-// Status Stepper Component
+// What happens next at each status. Statuses are moved by the system, not by hand:
+//   saved -> For Verification -> (Senior MedTech QC) -> Approved or back to Encoding
+//   Approved -> (report printed & confirmed) -> Released
+const NEXT_STEP: Record<string, string> = {
+  pending: "Encode the result. Saving sends it to a Senior MedTech for verification.",
+  encoding: "Returned by Quality Checking. Correct the result and save it to resubmit.",
+  for_verification: "Waiting for a Senior MedTech to verify it in Quality Checking.",
+  approved: "Verified. It will be released when the report is printed (after payment).",
+  released: "Released. The requesting doctor can now see this result.",
+};
+
+// Status Stepper Component (read-only)
 const StatusStepper = ({
   currentStatus,
-  onAdvance,
-  isUpdating,
+  resultId,
 }: {
   currentStatus: string;
-  onAdvance: () => void;
-  isUpdating: boolean;
+  resultId: string;
 }) => {
+  const [lastQc, setLastQc] = useState<{ qc_result: string; checked_by: string; comments: string } | null>(null);
+  useEffect(() => {
+    supabase
+      .from("quality_checks")
+      .select("qc_result, checked_by, comments, created_at")
+      .eq("test_result_id", resultId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .then(({ data }) => setLastQc((data?.[0] as any) ?? null));
+  }, [resultId]);
+
   const steps = [
     { key: "pending", label: "Pending", icon: Clock },
     { key: "encoding", label: "Encoding", icon: Edit2 },
@@ -55,15 +76,7 @@ const StatusStepper = ({
         <span className="text-sm font-semibold text-gray-700">
           Status Pipeline
         </span>
-        {currentStatus !== "released" && (
-          <button
-            onClick={onAdvance}
-            disabled={isUpdating}
-            className="px-3 py-1.5 bg-[#3B6255] text-white text-xs rounded-lg hover:bg-[#5A7669] transition font-semibold disabled:opacity-50 flex items-center gap-1"
-          >
-            {isUpdating ? "Updating..." : "Advance →"}
-          </button>
-        )}
+        <span className="text-[10px] text-gray-400">Updated automatically</span>
       </div>
 
       <div className="relative">
@@ -117,6 +130,17 @@ const StatusStepper = ({
           })}
         </div>
       </div>
+
+      <div className="mt-4 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2">
+        <span className="font-semibold text-gray-700">Next: </span>
+        {NEXT_STEP[currentStatus] ?? "—"}
+      </div>
+      {lastQc && (currentStatus === "encoding" || lastQc.qc_result === "fail") && (
+        <div className="mt-2 text-xs bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2">
+          <span className="font-semibold">QC {lastQc.qc_result.toUpperCase()}</span> by {lastQc.checked_by}
+          {lastQc.comments && <>: “{lastQc.comments}”</>}
+        </div>
+      )}
     </div>
   );
 };
@@ -3134,14 +3158,7 @@ export default function TestResultsPage() {
               />
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
                 <div className="pointer-events-auto">
-                  <StatusStepper
-                    currentStatus={result.status}
-                    onAdvance={() => {
-                      moveToNextStatus(result.id, result.status);
-                      setExpandedStepperId(null);
-                    }}
-                    isUpdating={updatingStatusId === result.id}
-                  />
+                  <StatusStepper currentStatus={result.status} resultId={result.id} />
                 </div>
               </div>
             </>
