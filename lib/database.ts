@@ -512,10 +512,10 @@ export const syncTestRequestStatus = async (testRequestId?: string | null) => {
     supabase.from('test_results').select('status').eq('test_request_id', testRequestId),
   ]);
   if (!req || req.status === 'cancelled') return;
-  let next = req.status;
-  if (results && results.length > 0) {
-    next = results.every(r => r.status === 'released') ? 'completed' : 'in_progress';
-  }
+  // pending (no results yet) -> in_progress -> completed (all released)
+  const next = !results || results.length === 0
+    ? 'pending'
+    : results.every(r => r.status === 'released') ? 'completed' : 'in_progress';
   if (next !== req.status) {
     await supabase.from('test_requests').update({ status: next }).eq('id', testRequestId);
   }

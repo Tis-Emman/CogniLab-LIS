@@ -374,6 +374,9 @@ export default function TestRequestPage() {
 
   // Delete confirm
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [hasResults, setHasResults] = useState<Set<string>>(new Set());
+  const [hasPaidBill, setHasPaidBill] = useState<Set<string>>(new Set());
+  const [rowError, setRowError] = useState<string | null>(null);
 
   // ── Animations ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -416,6 +419,15 @@ export default function TestRequestPage() {
     ]);
     setPatients(pts || []);
     setTestRequests(reqs);
+    // Which requests already have results or paid bills (limits Cancel/Delete)
+    if (!USE_MOCK_DATA) {
+      const [{ data: res }, { data: bills }] = await Promise.all([
+        supabase.from("test_results").select("test_request_id"),
+        supabase.from("billing").select("test_request_id, status"),
+      ]);
+      setHasResults(new Set((res || []).map((r: any) => r.test_request_id).filter(Boolean)));
+      setHasPaidBill(new Set((bills || []).filter((b: any) => b.status === "paid").map((b: any) => b.test_request_id).filter(Boolean)));
+    }
     setLoading(false);
   };
 
@@ -513,10 +525,22 @@ export default function TestRequestPage() {
   };
 
   // ── Status update ────────────────────────────────────────────────────────────
+  // Only "cancelled" is set by hand now; pending/in progress/completed follow the results.
   const handleStatusUpdate = async (
     id: string,
     status: TestRequest["status"]
   ) => {
+    if (status === "cancelled") {
+      if (hasResults.has(id)) {
+        setRowError("This request already has results, so it can't be cancelled.");
+        return;
+      }
+      // The patient shouldn't owe for cancelled tests
+      if (!USE_MOCK_DATA) {
+        await supabase.from("billing").delete().eq("test_request_id", id).eq("status", "unpaid");
+      }
+    }
+    setRowError(null);
     await updateTestRequestStatus(id, status, user);
     setTestRequests((prev) =>
       prev.map((r) => (r.id === id ? { ...r, status } : r))
@@ -525,6 +549,15 @@ export default function TestRequestPage() {
 
   // ── Delete ───────────────────────────────────────────────────────────────────
   const handleDelete = async (id: string) => {
+    if (hasResults.has(id) || hasPaidBill.has(id)) {
+      setRowError("Requests with results or paid bills can't be deleted. Cancel it instead if no results exist.");
+      setDeleteConfirmId(null);
+      return;
+    }
+    if (!USE_MOCK_DATA) {
+      await supabase.from("billing").delete().eq("test_request_id", id).eq("status", "unpaid");
+    }
+    setRowError(null);
     await deleteTestRequest(id, user);
     setTestRequests((prev) => prev.filter((r) => r.id !== id));
     setDeleteConfirmId(null);
@@ -886,6 +919,13 @@ export default function TestRequestPage() {
         </div>
       </div>
 
+      {rowError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex justify-between gap-4">
+          <span>{rowError}</span>
+          <button onClick={() => setRowError(null)} className="font-bold">✕</button>
+        </div>
+      )}
+
       {/* ── Requests Table ────────────────────────────────────────────────── */}
       <div
         className="bg-white rounded-lg shadow-lg overflow-hidden"
@@ -961,28 +1001,9 @@ export default function TestRequestPage() {
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="flex items-center gap-2">
-                            {req.status === "pending" && (
-                              <button
-                                onClick={() =>
-                                  handleStatusUpdate(req.id, "in_progress")
-                                }
-                                className="px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold hover:bg-blue-200 transition"
-                              >
-                                Start
-                              </button>
-                            )}
-                            {req.status === "in_progress" && (
-                              <button
-                                onClick={() =>
-                                  handleStatusUpdate(req.id, "completed")
-                                }
-                                className="px-3 py-1 bg-green-100 text-green-700 rounded-lg text-xs font-semibold hover:bg-green-200 transition"
-                              >
-                                Complete
-                              </button>
-                            )}
-                            {(req.status === "pending" ||
-                              req.status === "in_progress") && (
+                            {/* Status moves automatically from the results; only Cancel is manual */}
+                            {(req.status === "pending" || req.status === "in_progress") &&
+                              !hasResults.has(req.id) && (
                               <button
                                 onClick={() =>
                                   handleStatusUpdate(req.id, "cancelled")
@@ -992,8 +1013,8 @@ export default function TestRequestPage() {
                                 Cancel
                               </button>
                             )}
-                            {/* Delete */}
-                            {deleteConfirmId === req.id ? (
+                            {/* Delete (only when no results and no paid bills) */}
+                            {hasResults.has(req.id) || hasPaidBill.has(req.id) ? null : deleteConfirmId === req.id ? (
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={() => handleDelete(req.id)}
