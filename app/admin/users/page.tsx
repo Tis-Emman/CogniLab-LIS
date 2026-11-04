@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { Plus, Edit2, Trash2, Lock, Shield, Loader } from 'lucide-react';
-import { fetchUsers, addUser, updateUser, deleteUser } from '@/lib/database';
+import { fetchUsers, updateUser } from '@/lib/database';
 import { roleLabel } from '@/lib/roles';
+import { createStaffAccount, deleteStaffAccount } from '@/lib/adminApi';
+import { useAuth } from '@/lib/authContext';
 
 type Role = 'member' | 'faculty' | 'senior_medtech' | 'admin' | 'doctor';
 
@@ -28,6 +30,10 @@ export default function UserManagementPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const { user: me } = useAuth();
+  const [tempPassword, setTempPassword] = useState('');
+  const [pageError, setPageError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     full_name: '',
@@ -58,6 +64,11 @@ export default function UserManagementPage() {
     if (!formData.full_name.trim()) newErrors.full_name = 'Full name is required';
     if (!formData.email.trim()) newErrors.email = 'Email is required';
     if (!formData.department.trim()) newErrors.department = 'Department is required';
+    if (!editingId && tempPassword.length < 8) newErrors.tempPassword = 'Temporary password must be at least 8 characters';
+    if (editingId && editingId === me?.id) {
+      const original = users.find((u) => u.id === editingId);
+      if (original && original.role !== formData.role) newErrors.role = "You can't change your own role";
+    }
 
     // Check user limits (only when adding; editing an existing user must always work)
     if (editingId) {
@@ -85,9 +96,9 @@ export default function UserManagementPage() {
     setSubmitting(true);
     try {
       if (editingId) {
+        // Email is the login and can't be changed here (it would break the sign-in)
         await updateUser(editingId, {
           full_name: formData.full_name,
-          email: formData.email,
           role: formData.role,
           department: formData.department,
           // Report signatory details (migration 004)
@@ -96,12 +107,21 @@ export default function UserManagementPage() {
           signature_file: formData.signature_file.trim() || null,
         });
       } else {
-        await addUser(formData);
+        // Creates the login too (temporary password, changed on first sign-in)
+        await createStaffAccount({
+          full_name: formData.full_name.trim(),
+          email: formData.email.trim(),
+          role: formData.role,
+          department: formData.department.trim(),
+          password: tempPassword,
+        });
+        setNotice(`${formData.full_name} can now sign in with ${formData.email.trim().toLowerCase()} and the temporary password. They'll be asked to change it on first sign-in.`);
       }
       await loadUsers();
       resetForm();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving user:', error);
+      setPageError(error?.message || 'Could not save the user.');
     } finally {
       setSubmitting(false);
     }
@@ -112,6 +132,7 @@ export default function UserManagementPage() {
     setErrors({});
     setShowForm(false);
     setEditingId(null);
+    setTempPassword('');
   };
 
   const handleEdit = (user: User) => {
@@ -129,10 +150,14 @@ export default function UserManagementPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to delete this user?')) {
-      await deleteUser(id);
-      await loadUsers();
+    if (!confirm('Delete this user and their login? They will no longer be able to sign in.')) return;
+    try {
+      await deleteStaffAccount(id); // removes the profile AND the login
+      setPageError(null);
+    } catch (err: any) {
+      setPageError(err.message);
     }
+    await loadUsers();
   };
 
   const memberCount = users.filter((u) => u.role === 'member').length;
@@ -148,6 +173,18 @@ export default function UserManagementPage() {
 
   return (
     <div className="space-y-8">
+      {pageError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex justify-between gap-4">
+          <span>⛔ {pageError}</span>
+          <button onClick={() => setPageError(null)} className="font-bold">✕</button>
+        </div>
+      )}
+      {notice && (
+        <div className="bg-green-50 border border-green-200 text-green-800 rounded-lg px-4 py-3 text-sm flex justify-between gap-4">
+          <span>✓ {notice}</span>
+          <button onClick={() => setNotice(null)} className="font-bold">✕</button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -213,6 +250,8 @@ export default function UserManagementPage() {
                 <input
                   type="email"
                   value={formData.email}
+                  readOnly={!!editingId}
+                  title={editingId ? "The email is the login and can't be changed here" : undefined}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] text-gray-800 bg-white ${
                     errors.email ? 'border-red-500' : 'border-gray-300'
@@ -228,6 +267,8 @@ export default function UserManagementPage() {
                 </label>
                 <select
                   value={formData.role}
+                  disabled={!!editingId && editingId === me?.id}
+                  title={editingId && editingId === me?.id ? "You can't change your own role" : undefined}
                   onChange={(e) => setFormData({ ...formData, role: e.target.value as Role })}
                   className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] text-gray-800 bg-white ${
                     errors.role ? 'border-red-500' : 'border-gray-300'
@@ -257,6 +298,27 @@ export default function UserManagementPage() {
                 />
                 {errors.department && <p className="text-red-500 text-sm mt-1">{errors.department}</p>}
               </div>
+
+              {!editingId && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    Temporary Password <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={tempPassword}
+                    onChange={(e) => setTempPassword(e.target.value)}
+                    placeholder="Min. 8 characters"
+                    className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-[#3B6255] text-gray-800 bg-white ${
+                      errors.tempPassword ? 'border-red-500' : 'border-gray-300'
+                    }`}
+                  />
+                  {errors.tempPassword
+                    ? <p className="text-red-500 text-sm mt-1">{errors.tempPassword}</p>
+                    : <p className="text-xs text-gray-500 mt-1">Creates their login. They must change it on first sign-in.</p>}
+                </div>
+              )}
             </div>
 
             {editingId && ['member', 'senior_medtech', 'faculty'].includes(formData.role) && (
@@ -366,13 +428,15 @@ export default function UserManagementPage() {
                       <Edit2 className="w-4 h-4" />
                       Edit
                     </button>
-                    <button
-                      onClick={() => handleDelete(user.id)}
-                      className="text-red-600 hover:text-red-800 font-semibold text-sm flex items-center gap-1"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Delete
-                    </button>
+                    {user.id !== me?.id && user.role !== 'doctor' && (
+                      <button
+                        onClick={() => handleDelete(user.id)}
+                        className="text-red-600 hover:text-red-800 font-semibold text-sm flex items-center gap-1"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

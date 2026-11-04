@@ -46,6 +46,7 @@ interface TestResult {
   status: string;
   date_created: string;
   correction_note?: string | null;
+  created_by?: string | null;
 }
 
 interface QualityCheck {
@@ -644,7 +645,17 @@ export default function QualityCheckingPage() {
   );
 
   // ── Open QC form for a specific result ──────────────────────────────────────
+  // A MedTech can't verify a result they encoded themselves (also enforced in the database)
+  const encodedByMe = (r: TestResult) =>
+    !!r.created_by && !!user?.full_name && r.created_by.trim().toLowerCase() === user.full_name.trim().toLowerCase();
+
   const openQCForm = (result: TestResult) => {
+    if (encodedByMe(result)) {
+      setPageError("You encoded this result, so another Senior MedTech must quality-check it.");
+      return;
+    }
+    setPageError(null);
+    if (user?.full_name) setCheckedBy(user.full_name); // reviewer = whoever is signed in
     setSelectedResult(result);
     setShowQCForm(true);
     setComments("");
@@ -1206,10 +1217,11 @@ export default function QualityCheckingPage() {
               <input
                 type="text"
                 value={checkedBy}
-                onChange={(e) => setCheckedBy(e.target.value)}
-                placeholder="e.g. Maria Santos, RMT"
-                className={inputCls}
+                readOnly
+                title="Recorded automatically as the signed-in Senior MedTech"
+                className={`${inputCls} bg-gray-100 cursor-not-allowed`}
               />
+              <p className="text-xs text-gray-500 mt-1">Recorded automatically as you (the signed-in Senior MedTech).</p>
             </div>
 
             {/* Date & Time of QC */}
@@ -1441,7 +1453,11 @@ export default function QualityCheckingPage() {
                         )}
                       </td>
                       <td className="py-4 px-6">
-                        {!alreadyChecked ? (
+                        {!alreadyChecked && encodedByMe(result) ? (
+                          <span className="text-xs text-gray-500 italic" title="Another Senior MedTech must verify a result you encoded">
+                            Encoded by you
+                          </span>
+                        ) : !alreadyChecked ? (
                           <button
                             onClick={() => openQCForm(result)}
                             className="px-4 py-2 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg text-xs font-semibold hover:shadow-md transition flex items-center gap-1"

@@ -70,6 +70,8 @@ export default function DoctorDashboardPage() {
     if (!user) return;
     (async () => {
       const doc = await fetchDoctorByUser(user);
+      // Inactive doctors can't see patient data (also enforced in the database)
+      if (doc?.status === 'inactive') { setDoctor(null); setLoading(false); return; }
       setDoctor(doc);
       if (!doc) { setLoading(false); return; }
 
@@ -160,9 +162,10 @@ export default function DoctorDashboardPage() {
     return (
       <div className="bg-white rounded-lg shadow p-8 max-w-xl">
         <AlertTriangle className="w-10 h-10 text-yellow-500 mb-3" />
-        <h1 className="text-xl font-bold text-gray-800 mb-2">Your account isn&apos;t linked to a doctor profile</h1>
+        <h1 className="text-xl font-bold text-gray-800 mb-2">No active doctor profile for this account</h1>
         <p className="text-gray-600 text-sm">
-          Ask the administrator to add you under Admin Panel → Doctors with the email <b>{user?.email}</b>.
+          Your doctor profile is either inactive or not linked to <b>{user?.email}</b>.
+          Please contact the laboratory administrator.
         </p>
       </div>
     );

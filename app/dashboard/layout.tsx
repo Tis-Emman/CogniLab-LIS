@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/authContext';
 import Sidebar from '@/components/Sidebar';
-import { Loader } from 'lucide-react';
+import { Loader, KeyRound, LogOut } from 'lucide-react';
+import ChangePasswordForm from '@/components/ChangePasswordForm';
 import { isDoctor, isAdmin } from '@/lib/roles';
 
 export default function DashboardLayout({
@@ -12,7 +13,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { user, loading } = useAuth();
+  const { user, authUser, loading, signOut } = useAuth();
   const router = useRouter();
   const [isMobile, setIsMobile] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -52,6 +53,29 @@ export default function DashboardLayout({
 
   if (!user || isDoctor(user) || isAdmin(user)) {
     return null;
+  }
+
+  // Accounts created by the admin start with a temporary password
+  if (authUser?.user_metadata?.must_change_password) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#3B6255] to-green-900 p-6">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+          <KeyRound className="w-10 h-10 text-[#3B6255] mb-3" />
+          <h1 className="text-2xl font-bold text-gray-800">Set your own password</h1>
+          <p className="text-sm text-gray-600 mt-1 mb-6">
+            Welcome, {user.full_name}. You signed in with a temporary password from the administrator.
+            Choose a new one that only you know before continuing.
+          </p>
+          <ChangePasswordForm forced />
+          <button
+            onClick={() => signOut()}
+            className="w-full mt-3 px-6 py-2 text-sm text-gray-600 hover:text-red-700 flex items-center justify-center gap-2"
+          >
+            <LogOut className="w-4 h-4" /> Sign out
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (

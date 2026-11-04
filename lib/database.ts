@@ -1015,7 +1015,7 @@ export const addBilling = async (billing: {
   return data?.[0] || null;
 };
 
-export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid', currentUser?: any, extraFields?: { or_number?: string; date_paid?: string }) => {
+export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid', currentUser?: any, extraFields?: { or_number?: string | null; date_paid?: string | null }) => {
   if (USE_MOCK_DATA) {
     const index = MOCK_BILLING.findIndex(b => b.id === id);
     if (index !== -1) {

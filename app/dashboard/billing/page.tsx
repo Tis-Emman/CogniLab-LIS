@@ -33,6 +33,9 @@ export default function BillingPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<string>('all');
   const [billingError, setBillingError] = useState<string | null>(null);
+  // "Mark Paid" dialog: records the official receipt (OR) number
+  const [payTarget, setPayTarget] = useState<BillingRecord | null>(null);
+  const [orNumber, setOrNumber] = useState('');
 
   // Inject animation keyframes
   useEffect(() => {
@@ -111,10 +114,17 @@ export default function BillingPage() {
     setLoading(false);
   };
 
-  const handlePaymentStatusChange = async (id: string, newStatus: 'paid' | 'unpaid') => {
+  const handlePaymentStatusChange = async (id: string, newStatus: 'paid' | 'unpaid', orNo?: string) => {
     const billing = billings.find(b => b.id === id);
     try {
-      await updateBillingStatus(id, newStatus, user);
+      await updateBillingStatus(
+        id,
+        newStatus,
+        user,
+        newStatus === 'paid'
+          ? { or_number: orNo?.trim() || null, date_paid: new Date().toISOString() }
+          : { or_number: null, date_paid: null },
+      );
       setBillingError(null);
     } catch (err: any) {
       setBillingError(err.message);
@@ -379,13 +389,16 @@ export default function BillingPage() {
                     >
                       {(billing.status || billing.paymentStatus) === 'paid' ? '✓ Paid' : '⏳ Unpaid'}
                     </span>
+                    {(billing.status || billing.paymentStatus) === 'paid' && billing.or_number && (
+                      <p className="text-xs text-gray-500 mt-1">OR #{billing.or_number}</p>
+                    )}
                   </td>
                   <td className="py-4 px-8 text-gray-600">{billing.date_created || billing.dateCreated || ''}</td>
                   <td className="py-4 px-8 flex gap-2">
                     {(billing.status || billing.paymentStatus) === 'unpaid' ? (
                       <>
                         <button
-                          onClick={() => handlePaymentStatusChange(billing.id as string, 'paid')}
+                          onClick={() => { setOrNumber(''); setPayTarget(billing); }}
                           className="text-green-600 hover:text-green-800 font-semibold text-sm"
                           title="Mark as Paid"
                         >
@@ -420,6 +433,46 @@ export default function BillingPage() {
       </div>
 
 
+      {payTarget && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div className="bg-gradient-to-r from-[#3B6255] to-green-900 text-white px-6 py-5">
+              <h3 className="text-lg font-bold">Record payment</h3>
+              <p className="text-sm text-[#CBDED3]">
+                {payTarget.patient_name || payTarget.patientName} · {payTarget.test_name || payTarget.testName} · ₱{payTarget.amount.toFixed(2)}
+              </p>
+            </div>
+            <div className="p-6 space-y-3">
+              <label className="block text-sm font-semibold text-gray-700">
+                Official Receipt (OR) No. <span className="text-gray-400 font-normal">(recommended)</span>
+              </label>
+              <input
+                type="text"
+                value={orNumber}
+                onChange={(e) => setOrNumber(e.target.value)}
+                placeholder="e.g. 0012345"
+                autoFocus
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-800 bg-white focus:ring-2 focus:ring-[#3B6255] outline-none"
+              />
+              <p className="text-xs text-gray-500">The payment date is recorded automatically. The OR number shows on the bill for auditing.</p>
+            </div>
+            <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setPayTarget(null)}
+                className="px-5 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => { const t = payTarget; setPayTarget(null); await handlePaymentStatusChange(t.id as string, 'paid', orNumber); }}
+                className="px-5 py-2 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg font-semibold"
+              >
+                Mark as Paid
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
