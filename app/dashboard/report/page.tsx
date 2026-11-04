@@ -419,7 +419,9 @@ export default function PrintReportPage() {
 
     // Junior medtech: from test_requests.created_by
     const testRequest = findTestRequest(patient);
-    const createdBy = testRequest?.created_by ?? "";
+    // Encoder = who encoded the results (test_results.created_by, migration 009);
+    // older results fall back to whoever created the test request.
+    const createdBy = patientResults.find((r) => r.created_by)?.created_by ?? testRequest?.created_by ?? "";
 
     // Senior medtech: from quality_checks.checked_by (newest check wins)
     const resultIds = patientResults.map((r) => r.id);

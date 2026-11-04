@@ -557,6 +557,7 @@ export default function QualityCheckingPage() {
   // Expand
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [qcToDelete, setQcToDelete] = useState<QualityCheck | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
 
   // Search for test results
   const [resultSearch, setResultSearch] = useState("");
@@ -655,10 +656,30 @@ export default function QualityCheckingPage() {
 
   const handleDeleteQC = async () => {
     if (!qcToDelete) return;
+    const target = testResults.find((r) => r.id === qcToDelete.test_result_id);
+    if (target?.status === "released") {
+      setPageError("The QC record of a released result can't be deleted (it's part of the released report).");
+      setQcToDelete(null);
+      return;
+    }
     if (USE_MOCK_DATA) {
       MOCK_QC_CHECKS = MOCK_QC_CHECKS.filter((q) => q.id !== qcToDelete.id);
     } else {
-      await supabase.from("quality_checks").delete().eq("id", qcToDelete.id);
+      const { error } = await supabase.from("quality_checks").delete().eq("id", qcToDelete.id);
+      if (error) {
+        setPageError(error.message);
+        setQcToDelete(null);
+        return;
+      }
+      // Without its PASS, an approved result must be verified again
+      const otherPass = qcChecks.some(
+        (q) => q.id !== qcToDelete.id && q.test_result_id === qcToDelete.test_result_id && q.qc_result === "pass"
+      );
+      if (target?.status === "approved" && !otherPass) {
+        try {
+          await updateTestResult(target.id, { status: "for_verification" }, user);
+        } catch { /* the database trigger (migration 009) also handles this */ }
+      }
     }
     setQcChecks((prev) => prev.filter((q) => q.id !== qcToDelete.id));
     setQcToDelete(null);
@@ -772,6 +793,12 @@ export default function QualityCheckingPage() {
 
   return (
     <div className="space-y-8" style={{ animation: "fadeIn 0.5s ease-out" }}>
+      {pageError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex justify-between gap-4">
+          <span>⛔ {pageError}</span>
+          <button onClick={() => setPageError(null)} className="font-bold">✕</button>
+        </div>
+      )}
 
       {/* ── LIS Workflow Stepper ───────────────────────────────────────────── */}
       <div style={{ animation: "fadeInSlideUp 0.6s ease-out 0s both" }}>

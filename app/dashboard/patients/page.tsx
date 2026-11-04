@@ -104,6 +104,7 @@ export default function PatientsPage() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [patientToDelete, setPatientToDelete] = useState<Patient | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
@@ -486,7 +487,13 @@ export default function PatientsPage() {
   };
   const handleDelete = async () => {
     if (!patientToDelete) return;
-    await deletePatient(patientToDelete.id);
+    try {
+      await deletePatient(patientToDelete.id);
+    } catch (err: any) {
+      setDeleteError(err.message); // keep the dialog open and explain why
+      return;
+    }
+    setDeleteError(null);
     await loadPatients();
     setShowDeleteModal(false);
     setPatientToDelete(null);
@@ -1559,11 +1566,17 @@ export default function PatientsPage() {
             </div>
 
             {/* Modal Footer */}
+            {deleteError && (
+              <div className="mx-8 mb-4 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">
+                ⛔ {deleteError}
+              </div>
+            )}
             <div className="bg-gray-50 border-t border-gray-200 px-8 py-4 rounded-b-lg flex justify-end gap-3">
               <button
                 onClick={() => {
                   setShowDeleteModal(false);
                   setPatientToDelete(null);
+                  setDeleteError(null);
                 }}
                 className="px-6 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition font-semibold"
               >

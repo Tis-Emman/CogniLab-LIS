@@ -388,18 +388,37 @@ export const deletePatient = async (id: string) => {
 
   const { data: patientData } = await supabase
     .from('patients')
-    .select('patient_id_no, first_name, last_name')
+    .select('patient_id_no, first_name, last_name, middle_name')
     .eq('id', id)
     .single();
+
+  // A patient with requests, results or bills is part of the lab record and
+  // can't be deleted (it would leave orphaned records). Checked by id and name.
+  if (patientData) {
+    const counts = await Promise.all([
+      supabase.from('test_requests').select('id', { head: true, count: 'exact' }).eq('patient_id', id),
+      supabase.from('test_results').select('id', { head: true, count: 'exact' }).eq('patient_id', id),
+      supabase.from('billing').select('id', { head: true, count: 'exact' }).eq('patient_id', id),
+    ]);
+    const [{ data: byNameResults }, { data: byNameBills }] = await Promise.all([
+      supabase.from('test_results').select('patient_name').is('patient_id', null),
+      supabase.from('billing').select('patient_name').is('patient_id', null),
+    ]);
+    const byName = [...(byNameResults || []), ...(byNameBills || [])]
+      .some((r: any) => nameMatchesPatient(r.patient_name, patientData));
+    if (counts.some(c => (c.count ?? 0) > 0) || byName) {
+      throw new Error('This patient has test requests, results or bills, so the record cannot be deleted.');
+    }
+  }
 
   const { error } = await supabase
     .from('patients')
     .delete()
     .eq('id', id);
-  
+
   if (error) {
     console.error('Error deleting patient:', error);
-    return false;
+    throw new Error(error.message);
   }
   
   if (patientData) {
@@ -444,7 +463,7 @@ export const fetchTestResults = async () => {
 // test_request_id so they no longer depend on matching the patient's name.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const LINK_FIELDS = ['patient_id', 'test_request_id'] as const;
+const LINK_FIELDS = ['patient_id', 'test_request_id', 'created_by'] as const;
 
 const normName = (s?: string | null) =>
   (s ?? '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
@@ -491,7 +510,7 @@ export const resolveRecordLinks = async (
 /** Insert that still works before migration 004 adds the link columns. */
 const insertWithLinks = async (table: string, row: Record<string, any>) => {
   const res = await supabase.from(table).insert([row]).select();
-  if (res.error && /patient_id|test_request_id/.test(res.error.message)) {
+  if (res.error && /patient_id|test_request_id|created_by/.test(res.error.message)) {
     console.warn(`[${table}] link columns missing; run migration 004. Saving without links.`);
     const stripped = { ...row };
     LINK_FIELDS.forEach(k => delete stripped[k]);
@@ -508,14 +527,22 @@ const insertWithLinks = async (table: string, row: Record<string, any>) => {
 export const syncTestRequestStatus = async (testRequestId?: string | null) => {
   if (USE_MOCK_DATA || !testRequestId) return;
   const [{ data: req }, { data: results }] = await Promise.all([
-    supabase.from('test_requests').select('id, status').eq('id', testRequestId).maybeSingle(),
-    supabase.from('test_results').select('status').eq('test_request_id', testRequestId),
+    supabase.from('test_requests').select('id, status, requested_tests').eq('id', testRequestId).maybeSingle(),
+    supabase.from('test_results').select('status, test_name, section').eq('test_request_id', testRequestId),
   ]);
   if (!req || req.status === 'cancelled') return;
-  // pending (no results yet) -> in_progress -> completed (all released)
-  const next = !results || results.length === 0
+  const rows = results || [];
+  const norm = (v?: string) => (v ?? '').trim().toLowerCase();
+  // A requested test is covered by a result with the same name, or (for panels
+  // like CBC/Urinalysis stored as components) by any result in the same section.
+  const covered = (t: { test_name: string; section: string }) =>
+    rows.some(r => norm(r.test_name) === norm(t.test_name)) ||
+    rows.some(r => norm(r.section) === norm(t.section));
+  const requested: { test_name: string; section: string }[] = req.requested_tests || [];
+  // pending (no results) -> in_progress -> completed (every requested test has a result, all released)
+  const next = rows.length === 0
     ? 'pending'
-    : results.every(r => r.status === 'released') ? 'completed' : 'in_progress';
+    : requested.every(covered) && rows.every(r => r.status === 'released') ? 'completed' : 'in_progress';
   if (next !== req.status) {
     await supabase.from('test_requests').update({ status: next }).eq('id', testRequestId);
   }
@@ -630,13 +657,35 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
     ? {}
     : await resolveRecordLinks(result.patient_name, result.section);
   // A newly encoded result goes straight to the senior MedTech for verification.
-  const row = { ...links, ...result, status: result.status || 'for_verification' };
+  // created_by = who encoded it (the report's "Encoder" signatory).
+  const row = {
+    ...links,
+    ...result,
+    status: result.status || 'for_verification',
+    created_by: result.created_by || currentUser?.full_name || null,
+  };
+
+  // One result per test per request: edit the existing one instead of duplicating.
+  if (row.test_request_id) {
+    const { data: dup } = await supabase
+      .from('test_results')
+      .select('id, status')
+      .eq('test_request_id', row.test_request_id)
+      .ilike('test_name', String(row.test_name).replace(/[%_]/g, (c: string) => '\\' + c))
+      .limit(1);
+    if (dup && dup.length > 0) {
+      throw new Error(`A ${row.test_name} result already exists for this request (${dup[0].status}). Edit that result instead of encoding it again.`);
+    }
+  }
 
   const { data, error } = await insertWithLinks('test_results', row);
 
   if (error) {
     console.error('Error adding test result:', error);
-    return null;
+    if (/uq_result_per_request_test|duplicate key/.test(error.message)) {
+      throw new Error(`A ${row.test_name} result already exists for this request. Edit that result instead.`);
+    }
+    throw new Error(error.message);
   }
 
   // A result now exists, so the request is at least in progress.
@@ -992,15 +1041,30 @@ export const updateBillingStatus = async (id: string, status: 'paid' | 'unpaid',
     .eq('id', id)
     .single();
 
+  if (status === 'unpaid' && oldData?.status === 'paid') {
+    let q = supabase
+      .from('test_results')
+      .select('id', { head: true, count: 'exact' })
+      .in('status', ['approved', 'released'])
+      .ilike('section', oldData.section || '');
+    q = oldData.test_request_id
+      ? q.eq('test_request_id', oldData.test_request_id)
+      : q.eq('patient_name', oldData.patient_name);
+    const { count } = await q;
+    if ((count ?? 0) > 0) {
+      throw new Error('This bill covers results that are already approved or released, so it cannot be marked unpaid.');
+    }
+  }
+
   const { data, error } = await supabase
     .from('billing')
     .update({ status, ...(extraFields || {}), updated_at: new Date().toISOString() })
     .eq('id', id)
     .select();
-  
+
   if (error) {
     console.error('Error updating billing status:', error);
-    return null;
+    throw new Error(error.message);
   }
 
   if (data?.[0]) {
@@ -1028,14 +1092,19 @@ export const deleteBilling = async (id: string) => {
     return false;
   }
 
+  const { data: bill } = await supabase.from('billing').select('status').eq('id', id).maybeSingle();
+  if (bill?.status === 'paid') {
+    throw new Error('Paid bills cannot be deleted.');
+  }
+
   const { error } = await supabase
     .from('billing')
     .delete()
     .eq('id', id);
-  
+
   if (error) {
     console.error('Error deleting billing:', error);
-    return false;
+    throw new Error(error.message);
   }
   return true;
 };

@@ -32,6 +32,7 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [paymentFilter, setPaymentFilter] = useState<string>('all');
+  const [billingError, setBillingError] = useState<string | null>(null);
 
   // Inject animation keyframes
   useEffect(() => {
@@ -112,7 +113,13 @@ export default function BillingPage() {
 
   const handlePaymentStatusChange = async (id: string, newStatus: 'paid' | 'unpaid') => {
     const billing = billings.find(b => b.id === id);
-    await updateBillingStatus(id, newStatus, user);
+    try {
+      await updateBillingStatus(id, newStatus, user);
+      setBillingError(null);
+    } catch (err: any) {
+      setBillingError(err.message);
+      return;
+    }
 
     if (newStatus === 'paid' && billing) {
       // Auto-create specimen_tracking record if one doesn't exist yet
@@ -157,7 +164,13 @@ export default function BillingPage() {
   const handleDeleteBilling = async (id: string) => {
     if (confirm('Delete this billing record?')) {
       const billing = billings.find(b => b.id === id);
-      await deleteBilling(id);
+      try {
+        await deleteBilling(id);
+        setBillingError(null);
+      } catch (err: any) {
+        setBillingError(err.message);
+        return;
+      }
       await logActivity({
         user_id: user?.id,
         user_name: user?.full_name || 'Unknown User',
@@ -182,15 +195,21 @@ export default function BillingPage() {
   const paidCount = billings.filter((b) => (b.status || b.paymentStatus) === 'paid').length;
   const unpaidCount = billings.filter((b) => (b.status || b.paymentStatus) === 'unpaid').length;
 
+  // Same path as the status change, so the guard and specimen clean-up apply
   const handleMarkUnpaid = async (billing: BillingRecord) => {
-    await updateBillingStatus(billing.id as string, 'unpaid', user);
-    await loadBilling();
+    await handlePaymentStatusChange(billing.id as string, 'unpaid');
   };
 
   return (
     <div className="space-y-8" style={{
       animation: 'fadeIn 0.5s ease-out'
     }}>
+      {billingError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex justify-between gap-4">
+          <span>⛔ {billingError}</span>
+          <button onClick={() => setBillingError(null)} className="font-bold">✕</button>
+        </div>
+      )}
       {/* Header */}
       <div style={{
         animation: 'fadeInSlideUp 0.6s ease-out',
@@ -385,17 +404,11 @@ export default function BillingPage() {
                         <button
                           onClick={() => handleMarkUnpaid(billing)}
                           className="text-orange-600 hover:text-orange-800 font-semibold text-sm"
-                          title="Mark as Unpaid"
+                          title="Mark as Unpaid (not allowed once its results are approved or released)"
                         >
                           Mark Unpaid
                         </button>
-                        <button
-                          onClick={() => handleDeleteBilling(billing.id as string)}
-                          className="text-red-600 hover:text-red-800 font-semibold text-sm"
-                          title="Delete"
-                        >
-                          Delete
-                        </button>
+                        {/* Paid bills are financial records and can't be deleted */}
                       </>
                     )}
                   </td>

@@ -580,8 +580,9 @@ function TestResultForm({
       }
 
       setSaved(true);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error saving result:", err);
+      setErrors((prev) => ({ ...prev, general: err?.message || "Could not save the result." }));
       submittedRef.current = false; // allow retry on error
     } finally {
       setSubmitting(false);
@@ -1000,6 +1001,10 @@ function TestResultForm({
                 </div>
               )}
             </div>
+          )}
+
+          {errors.general && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm">⛔ {errors.general}</div>
           )}
 
           {/* Actions */}

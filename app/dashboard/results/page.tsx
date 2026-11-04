@@ -2862,9 +2862,15 @@ export default function TestResultsPage() {
             {/* Form Actions */}
             <div className="flex gap-4 pt-6 border-t border-gray-200">
               {(() => {
-                const isUnpaid = !!patientName && billings.some(
-                  (b) => b.patient_name === patientName && (b.status || b.paymentStatus) !== "paid"
-                );
+                // Only this test's bill matters (exact test name, else same section).
+                // Editing/correcting an already-encoded result is never blocked by payment.
+                const norm = (v?: string) => (v ?? "").trim().toLowerCase();
+                const mine = billings.filter((b) => b.patient_name === patientName);
+                const exact = mine.filter((b) => norm(b.test_name) === norm(selectedTest));
+                const relevant = exact.length ? exact : mine.filter((b) => norm(b.section) === norm(selectedSection));
+                const isUnpaid =
+                  !editingId && !!patientName && !!selectedTest &&
+                  relevant.some((b) => (b.status || b.paymentStatus) !== "paid");
                 return (
                   <button
                     type="submit"
