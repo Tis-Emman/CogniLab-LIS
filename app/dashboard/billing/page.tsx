@@ -145,6 +145,9 @@ export default function BillingPage() {
           test_name:    billing.test_name    || billing.testName    || '',
           section:      billing.section      || '',
           billing_id:   id,
+          // link the specimen to the patient and request (not just the name)
+          patient_id:      (billing as any).patient_id ?? null,
+          test_request_id: (billing as any).test_request_id ?? null,
           status:       'pending_accession',
         }]);
       }

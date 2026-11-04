@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import { MOCK_USERS, MOCK_PATIENTS, MOCK_TEST_RESULTS, MOCK_BILLING, MOCK_AUDIT_LOGS, TEST_PRICING, TEST_REFERENCE_RANGES } from './mockData';
+import { toPHDate } from './dates';
 
 const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 
@@ -280,7 +281,7 @@ export const addPatient = async (patient: any, currentUser?: any) => {
     const newPatient = {
       id: `pat-${Date.now()}`,
       ...patient,
-      date_registered: new Date().toISOString().split('T')[0],
+      date_registered: toPHDate(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -591,7 +592,7 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
       id: `result-${Date.now()}`,
       ...result,
       status: result.status || 'pending',
-      date_created: new Date().toISOString().split('T')[0],
+      date_created: toPHDate(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
@@ -631,7 +632,7 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
       section: result.section,
       amount: testCost,
       status: 'unpaid',
-      date_created: new Date().toISOString().split('T')[0],
+      date_created: toPHDate(),
       description: `Lab test: ${result.test_name}`,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -742,7 +743,7 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
           amount: testCost,
           status: 'unpaid',
           description: `Lab test: ${result.test_name}`,
-          date_created: new Date().toISOString().split('T')[0],
+          date_created: toPHDate(),
         });
 
       if (billingError) {
@@ -989,7 +990,7 @@ export const addBilling = async (billing: {
       amount: billing.amount,
       status: 'unpaid' as const,
       description: billing.description || `${billing.test_name} - ${billing.section}`,
-      date_created: new Date().toISOString().split('T')[0],
+      date_created: toPHDate(),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

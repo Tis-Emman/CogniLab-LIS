@@ -31,6 +31,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/authContext";
 import { logActivity } from "@/lib/database";
 import PhysicianPicker from "@/components/PhysicianPicker";
+import { REQUEST_SECTIONS as TR_LAB_SECTIONS, REQUEST_TESTS as TR_TESTS_BY_SECTION } from "@/config/testCatalog";
+import { priceRequestedTests } from "@/lib/prices";
 import BarangaySelect, { FixedField } from "@/components/BarangaySelect";
 import { SERVICE_AREA } from "@/config/constants";
 
@@ -73,19 +75,8 @@ interface Patient {
 }
 
 // ── Lab sections for test request popup ─────────────────────────────────────
-const TR_LAB_SECTIONS = [
-  "BLOOD BANK","HEMATOLOGY","CLINICAL MICROSCOPY",
-  "CLINICAL CHEMISTRY","MICROBIOLOGY","IMMUNOLOGY/SEROLOGY","HISTOPATHOLOGY",
-];
-const TR_TESTS_BY_SECTION: Record<string, string[]> = {
-  "BLOOD BANK": ["ABO Blood Typing","Rh Typing","Crossmatching","Antibody Screening","Infectious Disease Screening"],
-  "HEMATOLOGY": ["CBC","Hemoglobin","Hematocrit","WBC Count","Platelet Count","RBC Indices (MCV, MCH, RDW)","Peripheral Blood Smear","ESR","PT/INR, PTT","Clotting Time","Bleeding Time","Reticulocyte Count"],
-  "CLINICAL MICROSCOPY": ["Routine Urinalysis (UA)","Routine Fecalysis (FA)","Fecal Occult Blood Test","Pregnancy Test (hCG)","Pregnancy Test (PT)","Semen Analysis","KOH Mount","Wet Mount"],
-  "CLINICAL CHEMISTRY": ["Lipid Profile","Liver Function Test","Renal Function Test","Electrolytes","Glucose & Diabetes Monitoring","Arterial Blood Gas","Fasting Blood Sugar (FBS)","Random Blood Sugar (RBS)","HbA1c","Uric Acid","Creatinine","BUN","Total Cholesterol","Triglycerides","HDL","LDL"],
-  "MICROBIOLOGY": ["Culture and Sensitivity","Gram Staining","AFB Smear","India Ink","KOH Preparation"],
-  "IMMUNOLOGY/SEROLOGY": ["HBsAg (Hepa B Surface Ag) - Qualitative","Dengue NS1Ag","Leptospirosis Test","Syphilis Test (Qualitative)","Typhidot Test (IgG, IgM)","HIV Screening","RPR/VDRL","ANA","RF (Rheumatoid Factor)","C-Reactive Protein (CRP)","PSA","TSH","Free T3 / T4"],
-  "HISTOPATHOLOGY": ["Tissue Biopsy","Skin Biopsy","Kidney Biopsy","Liver Biopsy Fibrosis","Liver Biopsy Activity","Bone Biopsy","PAP Smear","Fine Needle Aspiration Cytology (FNAC)"],
-};
+
+
 const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === "true";
 let MOCK_TEST_REQUESTS: any[] = [];
 const toLocalDatetimeValue = (date: Date): string => {
@@ -410,6 +401,13 @@ export default function PatientsPage() {
     }
     setTrSubmitting(true);
     setTrError(null);
+    // Every requested test must have a price (Admin → Test Prices)
+    const { priced, missing } = await priceRequestedTests(trTests);
+    if (missing.length) {
+      setTrSubmitting(false);
+      setTrError(`No price is set for: ${missing.join(", ")}. Ask the administrator to set it in Admin → Test Prices.`);
+      return;
+    }
     const payload = {
       patient_id: trPatient.id,
       patient_name: `${trPatient.first_name} ${trPatient.last_name}`.trim(),
@@ -433,8 +431,8 @@ export default function PatientsPage() {
         await logActivity({ user_id: user?.id, user_name: user?.full_name || "Unknown", encryption_key: user?.encryption_key || "", action: "edit", resource: `Test Request - ${payload.patient_name}`, resource_type: "Test Request", description: `Created test request for ${payload.patient_name} with ${trTests.length} test(s)` });
       }
       // ── Auto-create billing records for each requested test ──────────────
-      for (const t of trTests) {
-        const price = getTestPrice(t.test_name, t.section) ?? 300;
+      for (const t of priced) {
+        const price = t.price as number;
         await addBilling({
           patient_id: trPatient.id,
           test_request_id: createdRequestId,

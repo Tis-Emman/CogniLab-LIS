@@ -527,6 +527,13 @@ export default function TestResultsPage() {
   const [selectedSection, setSelectedSection] = useState<string>("");
   const [selectedTest, setSelectedTest] = useState<string>("");
   const [patientName, setPatientName] = useState("");
+  // Encoding is tied to a test request: only its tests can be encoded
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null);
+  const [patientRequests, setPatientRequests] = useState<any[]>([]);
+  const [selectedRequestId, setSelectedRequestId] = useState("");
+  // For requested tests without a dedicated form: range/unit from the kit or analyzer
+  const [manualRange, setManualRange] = useState("");
+  const [manualUnit, setManualUnit] = useState("");
   const [patientSearch, setPatientSearch] = useState("");
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
   const [resultValue, setResultValue] = useState("");
@@ -742,6 +749,17 @@ export default function TestResultsPage() {
     const data = await fetchBilling();
     setBillings(data);
   };
+  const loadPatientRequests = async (patientId: string) => {
+    const { data } = await supabase
+      .from("test_requests")
+      .select("id, requested_tests, status, created_at, requesting_physician")
+      .eq("patient_id", patientId)
+      .in("status", ["pending", "in_progress"])
+      .order("created_at", { ascending: false });
+    setPatientRequests(data || []);
+    setSelectedRequestId(data && data.length === 1 ? data[0].id : "");
+  };
+
   const loadResults = async () => {
     setLoading(true);
     const data = await fetchTestResults();
@@ -857,12 +875,34 @@ export default function TestResultsPage() {
       })()
     : [];
 
+  // ── Request-driven choices ───────────────────────────────────────────────
+  const selectedRequest = patientRequests.find((r) => r.id === selectedRequestId);
+  const requestSections: string[] | null = !editingId && selectedRequest
+    ? [...new Set<string>((selectedRequest.requested_tests || []).map((t: any) => t.section))]
+    : null;
+  const requestTests: string[] | null = !editingId && selectedRequest && selectedSection
+    ? (selectedRequest.requested_tests || [])
+        .filter((t: any) => t.section === selectedSection)
+        .map((t: any) => t.test_name)
+    : null;
+  // Requested tests that have neither a dedicated form nor a catalog entry
+  const SPECIAL_FORMS = [
+    "Arterial Blood Gas", "CBC", "Culture and Sensitivity", "Electrolytes", "Glucose & Diabetes Monitoring",
+    "Hemoglobin", "Lipid Profile", "Liver Function Test", "PT/INR, PTT", "RBC Indices (MCV, MCH, RDW)",
+    "Renal Function Test", "Routine Fecalysis (FA)", "Routine Urinalysis (UA)",
+  ];
+  const isManualTest =
+    !!selectedTest && !SPECIAL_FORMS.includes(selectedTest) && !currentTests.some((t) => t.name === selectedTest);
+
   // ── Validation ────────────────────────────────────────────────────────────
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
     if (!patientName.trim()) newErrors.patientName = "Patient name is required";
     if (!selectedSection) newErrors.section = "Lab section is required";
     if (!selectedTest) newErrors.test = "Test is required";
+    if (!editingId && !selectedRequestId) newErrors.request = "Choose the test request this result belongs to";
+    if (!editingId && selectedTest && isManualTest && !manualRange.trim())
+      newErrors.manualRange = "Enter the reference range (from the kit insert or analyzer)";
 
     if (selectedTest === "CBC") {
       if (
@@ -962,6 +1002,12 @@ export default function TestResultsPage() {
     if (!validateForm()) return;
 
     const testDetails = currentTests.find((t) => t.name === selectedTest);
+    // New results are linked to the chosen patient and test request by id
+    const linkFields = !editingId && selectedRequestId
+      ? { patient_id: selectedPatientId, test_request_id: selectedRequestId }
+      : {};
+    const addTestResultLinked = (payload: any, u: any, skip?: boolean) =>
+      addTestResult({ ...payload, ...linkFields }, u, skip);
     setSubmitting(true);
     try {
       const sexLabel = selectedPatientSex || "Male";
@@ -993,7 +1039,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
       } else if (selectedTest === "RBC Indices (MCV, MCH, RDW)") {
         const components = [
           { name: "MCV", value: rbcValues.mcv, range: "80 - 100", unit: "fL" },
@@ -1051,7 +1097,7 @@ export default function TestResultsPage() {
               );
               continue;
             }
-            await addTestResult(
+            await addTestResultLinked(
               {
                 patient_name: patientName,
                 section: selectedSection,
@@ -1066,7 +1112,7 @@ export default function TestResultsPage() {
           }
         } else {
           for (const c of components)
-            await addTestResult(
+            await addTestResultLinked(
               {
                 patient_name: patientName,
                 section: selectedSection,
@@ -1094,7 +1140,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
       } else if (selectedTest === "PT/INR, PTT") {
         const coagLines = [
           `PT: ${coagulationValues.pt} seconds`,
@@ -1111,7 +1157,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
 
         // ── FIXED: Routine Urinalysis — single record ─────────────────────────
       } else if (selectedTest === "Routine Urinalysis (UA)") {
@@ -1136,7 +1182,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
 
         // ── FIXED: Culture and Sensitivity — single record ────────────────────
       } else if (selectedTest === "Culture and Sensitivity") {
@@ -1156,7 +1202,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
 
         // ── ADD THIS ────────────────────────────────────────────────────────
       } else if (selectedTest === "Routine Fecalysis (FA)") {
@@ -1179,7 +1225,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
       } else if (selectedTest === "Lipid Profile") {
         const sub = LIPID_PROFILE_TESTS.find((t) => t.name === lipidSubTest)!;
         const payload = {
@@ -1192,7 +1238,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
       } else if (selectedTest === "Liver Function Test") {
         const sub = LIVER_FUNCTION_TESTS.find((t) => t.name === lftSubTest)!;
         const payload = {
@@ -1205,7 +1251,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
       } else if (selectedTest === "Renal Function Test") {
         const sub = RENAL_FUNCTION_TESTS.find((t) => t.name === rftSubTest)!;
         const payload = {
@@ -1218,7 +1264,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
       } else if (selectedTest === "Glucose & Diabetes Monitoring") {
         const sub = GLUCOSE_TESTS.find((t) => t.name === glucoseSubTest)!;
         const payload = {
@@ -1231,7 +1277,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
       } else if (selectedTest === "Electrolytes") {
         const resultString = [
           `Sodium (Na+): ${electrolytesValues.sodium} mmol/L`,
@@ -1252,7 +1298,7 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
       } else if (selectedTest === "Arterial Blood Gas") {
         const resultString = [
           `pH: ${abgValues.pH}`,
@@ -1271,19 +1317,19 @@ export default function TestResultsPage() {
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
       } else {
         const payload = {
           patient_name: patientName,
           section: selectedSection,
           test_name: selectedTest,
           result_value: resultValue,
-          reference_range: testDetails!.referenceRange,
-          unit: testDetails!.unit,
+          reference_range: testDetails?.referenceRange ?? manualRange.trim(),
+          unit: testDetails?.unit ?? manualUnit.trim(),
         };
         editingId
           ? await updateTestResult(editingId, payload, user, { note: correctionNote })
-          : await addTestResult(payload, user, true);
+          : await addTestResultLinked(payload, user, true);
       }
 
       await loadResults();
@@ -1298,6 +1344,11 @@ export default function TestResultsPage() {
   };
 
   const resetForm = () => {
+    setSelectedPatientId(null);
+    setPatientRequests([]);
+    setSelectedRequestId("");
+    setManualRange("");
+    setManualUnit("");
     setPatientName("");
     setPatientSearch("");
     setSelectedSection("");
@@ -1668,6 +1719,10 @@ export default function TestResultsPage() {
                             setPatientName(fullName);
                             setPatientSearch(fullName);
                             setShowPatientDropdown(false);
+                            setSelectedPatientId(p.id);
+                            setSelectedSection("");
+                            setSelectedTest("");
+                            loadPatientRequests(p.id);
                           }}
                           className="px-4 py-2.5 hover:bg-[#F0F4F1] cursor-pointer border-b border-gray-50 last:border-0"
                         >
@@ -1702,6 +1757,34 @@ export default function TestResultsPage() {
               })()}
             </div>
 
+            {/* Test Request (new results only) */}
+            {!editingId && patientName && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Test Request <span className="text-red-500">*</span>
+                </label>
+                {patientRequests.length === 0 ? (
+                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                    This patient has no open test request. Create one in <b>Test Request</b> first. Only requested tests can be encoded.
+                  </div>
+                ) : (
+                  <select
+                    value={selectedRequestId}
+                    onChange={(e) => { setSelectedRequestId(e.target.value); setSelectedSection(""); setSelectedTest(""); }}
+                    className={`w-full px-4 py-3 border-2 rounded-lg text-gray-800 bg-white font-medium ${errors.request ? "border-red-500" : "border-gray-300"}`}
+                  >
+                    <option value="">-- Select the request --</option>
+                    {patientRequests.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {new Date(r.created_at).toLocaleDateString("en-PH")} · {(r.requested_tests || []).map((t: any) => t.test_name).join(", ")}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {errors.request && <p className="text-red-500 text-sm mt-1">{errors.request}</p>}
+              </div>
+            )}
+
             {/* Lab Section */}
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-2">
@@ -1718,7 +1801,7 @@ export default function TestResultsPage() {
                 className={`w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-[#3B6255] outline-none transition text-gray-800 bg-white font-medium ${errors.section ? "border-red-500" : "border-gray-300 hover:border-[#8BA49A]"}`}
               >
                 <option value="">-- Select Laboratory Section --</option>
-                {LAB_SECTIONS.map((section) => (
+                {(requestSections ?? LAB_SECTIONS).map((section) => (
                   <option key={section} value={section}>
                     {section}
                   </option>
@@ -1752,8 +1835,11 @@ export default function TestResultsPage() {
                   className={`w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-[#3B6255] outline-none transition text-gray-800 bg-white font-medium ${errors.test ? "border-red-500" : "border-gray-300 hover:border-[#8BA49A]"}`}
                 >
                   <option value="">-- Select Test --</option>
+                  {requestTests && requestTests.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
                   {/* Show grouped CC tests at top with separator */}
-                  {selectedSection === "CLINICAL CHEMISTRY" && (
+                  {!requestTests && selectedSection === "CLINICAL CHEMISTRY" && (
                     <>
                       <optgroup label="── Panels / Groups ──">
                         {CC_GROUPED_TEST_NAMES.map((name) => (
@@ -1775,7 +1861,7 @@ export default function TestResultsPage() {
                       </optgroup>
                     </>
                   )}
-                  {selectedSection !== "CLINICAL CHEMISTRY" &&
+                  {!requestTests && selectedSection !== "CLINICAL CHEMISTRY" &&
                     currentTests.map((test) => (
                       <option key={test.name} value={test.name}>
                         {test.name}
@@ -2832,6 +2918,34 @@ export default function TestResultsPage() {
                       <p className="text-red-500 text-sm mt-1">
                         {errors.resultValue}
                       </p>
+                    )}
+                    {isManualTest && !editingId && (
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="md:col-span-2 text-xs text-blue-800">
+                          This test has no built-in reference range. Enter the range and unit from the kit insert or analyzer.
+                        </p>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Reference range <span className="text-red-500">*</span></label>
+                          <input
+                            type="text"
+                            value={manualRange}
+                            onChange={(e) => setManualRange(e.target.value)}
+                            placeholder="e.g. Negative, or 0.5 - 1.5"
+                            className={`w-full px-3 py-2 border rounded-lg text-gray-800 bg-white ${errors.manualRange ? "border-red-500" : "border-gray-300"}`}
+                          />
+                          {errors.manualRange && <p className="text-red-500 text-xs mt-1">{errors.manualRange}</p>}
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">Unit</label>
+                          <input
+                            type="text"
+                            value={manualUnit}
+                            onChange={(e) => setManualUnit(e.target.value)}
+                            placeholder="e.g. mg/dL (leave blank if none)"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800 bg-white"
+                          />
+                        </div>
+                      </div>
                     )}
                   </>
                 )}

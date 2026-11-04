@@ -520,7 +520,16 @@ function TestResultForm({
     try {
       const sexLabel = selectedPatientSex || "Male";
       const testDetails = currentTests.find((t) => t.name === selectedTest);
-      const base = { patient_name: specimen.patient_name, section: selectedSection };
+      // Link to the patient and request: from the specimen, else from its bill
+      let links: { patient_id?: string; test_request_id?: string } = {};
+      if ((specimen as any).test_request_id) {
+        links = { patient_id: (specimen as any).patient_id, test_request_id: (specimen as any).test_request_id };
+      } else if ((specimen as any).billing_id) {
+        const { data: bill } = await supabase
+          .from("billing").select("patient_id, test_request_id").eq("id", (specimen as any).billing_id).maybeSingle();
+        if (bill?.test_request_id) links = { patient_id: bill.patient_id, test_request_id: bill.test_request_id };
+      }
+      const base = { patient_name: specimen.patient_name, section: selectedSection, ...links };
 
       if (selectedTest === "CBC") {
         const cbcLines = [

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { ilikeLiteral } from '@/lib/roles';
+import { findAuthUserByEmail, requireAdmin } from '@/lib/serverAdmin';
 
 /**
  * POST /api/admin/doctor-account
@@ -107,4 +108,42 @@ export async function POST(req: Request) {
   if (linkErr) return NextResponse.json({ error: linkErr.message }, { status: 500 });
 
   return NextResponse.json({ email, reset: !created.data.user });
+}
+
+/**
+ * DELETE /api/admin/doctor-account
+ * Body: { doctorId }
+ * Deletes a doctor and, if they have one, their login and users row.
+ * Doctors with test requests can't be deleted (mark them Inactive instead),
+ * so request history keeps pointing at a real doctor.
+ */
+export async function DELETE(req: Request) {
+  const auth = await requireAdmin(req);
+  if (auth instanceof NextResponse) return auth;
+  const { admin } = auth;
+
+  const { doctorId } = await req.json().catch(() => ({}));
+  if (!doctorId) return NextResponse.json({ error: 'doctorId is required.' }, { status: 400 });
+
+  const { data: doctor } = await admin.from('doctors').select('id, full_name, email, user_id').eq('id', doctorId).maybeSingle();
+  if (!doctor) return NextResponse.json({ error: 'Doctor not found.' }, { status: 404 });
+
+  const { count } = await admin.from('test_requests').select('id', { head: true, count: 'exact' }).eq('doctor_id', doctorId);
+  if ((count ?? 0) > 0) {
+    return NextResponse.json({ error: `${doctor.full_name} has ${count} test request(s). Set the doctor to Inactive instead of deleting.` }, { status: 409 });
+  }
+
+  const { error } = await admin.from('doctors').delete().eq('id', doctorId);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Remove the doctor's login and profile so they can't sign in to an empty portal
+  if (doctor.user_id) {
+    const { data: row } = await admin.from('users').select('email, role').eq('id', doctor.user_id).maybeSingle();
+    if (row?.role === 'doctor') {
+      await admin.from('users').delete().eq('id', doctor.user_id);
+      const login = await findAuthUserByEmail(admin, row.email);
+      if (login) await admin.auth.admin.deleteUser(login.id);
+    }
+  }
+  return NextResponse.json({ ok: true });
 }

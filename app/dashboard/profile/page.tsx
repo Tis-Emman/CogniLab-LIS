@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/authContext';
 import { supabase } from '@/lib/supabaseClient';
 import { User, Mail, Phone, MapPin, Briefcase, Award, Edit2, Save, X, Loader } from 'lucide-react';
+import { toPHDate } from '@/lib/dates';
 
 interface UserProfile {
   id: string;
@@ -47,7 +48,7 @@ export default function ProfilePage() {
     certifications: u?.role === 'faculty'
       ? ['Clinical Pathology Specialist', 'ISO 15189 Quality Manager']
       : [],
-    joinDate: (u as any)?.join_date || new Date().toISOString().split('T')[0],
+    joinDate: (u as any)?.join_date || toPHDate(),
     address: dbData?.address || '',
     city: dbData?.city || '',
     province: dbData?.province || '',

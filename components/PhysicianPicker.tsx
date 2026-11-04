@@ -17,7 +17,9 @@ interface Props {
   className?: string;
 }
 
-const OTHER = '__other__';
+const WALK_IN = '__walk_in__';
+/** Name stored on requests with no referring doctor (self-requested / walk-in). */
+export const WALK_IN_LABEL = 'Walk-in (no referring doctor)';
 
 /**
  * Requesting-physician selector. Lists the predefined doctors for the patient's
@@ -27,7 +29,6 @@ export default function PhysicianPicker({ barangay, value, onChange, className }
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [showAll, setShowAll] = useState(false);
-  const [manual, setManual] = useState(false);
 
   useEffect(() => {
     fetchDoctors({ activeOnly: true }).then(d => { setDoctors(d); setLoaded(true); });
@@ -40,19 +41,15 @@ export default function PhysicianPicker({ barangay, value, onChange, className }
   const listed = showAll ? doctors : inArea;
   const hasArea = !!barangay;
 
-  // Fall back to typing when nothing is predefined.
-  const forceManual = loaded && doctors.length === 0;
-  const isManual = manual || forceManual;
-
-  const selectValue = isManual ? OTHER : value.doctorId || '';
+  // Only predefined doctors (so the doctor can see the results) or an explicit walk-in.
+  // Free-typed names were removed: no doctor account could ever see those results.
+  const selectValue = value.doctorId || (value.name === WALK_IN_LABEL ? WALK_IN : '');
 
   const handleSelect = (v: string) => {
-    if (v === OTHER) {
-      setManual(true);
-      onChange({ doctorId: null, name: '' });
+    if (v === WALK_IN) {
+      onChange({ doctorId: null, name: WALK_IN_LABEL });
       return;
     }
-    setManual(false);
     const d = doctors.find(x => x.id === v);
     onChange({ doctorId: d?.id || null, name: d?.full_name || '' });
   };
@@ -72,7 +69,7 @@ export default function PhysicianPicker({ barangay, value, onChange, className }
         Requesting Physician <span className="text-red-500">*</span>
       </label>
 
-      {!forceManual && (
+      {(
         <select value={selectValue} onChange={e => handleSelect(e.target.value)} className={className}>
           <option value="">
             {!loaded ? 'Loading doctors…' : listed.length ? 'Select a doctor' : 'No doctors for this barangay'}
@@ -82,21 +79,12 @@ export default function PhysicianPicker({ barangay, value, onChange, className }
               {d.full_name}{d.specialization ? ` — ${d.specialization}` : ''}{showAll ? ` (${areaLabel(d)})` : ''}
             </option>
           ))}
-          <option value={OTHER}>Other (type a name)…</option>
+          <option value={WALK_IN}>{WALK_IN_LABEL}</option>
         </select>
       )}
+      <p className="text-xs text-gray-500 mt-1">Doctor not listed? Ask the administrator to add them in Admin → Doctors.</p>
 
-      {isManual && (
-        <input
-          type="text"
-          value={value.name}
-          onChange={e => onChange({ doctorId: null, name: e.target.value })}
-          placeholder="e.g. Dr. Juan Dela Cruz"
-          className={`${className || ''} ${forceManual ? '' : 'mt-2'}`}
-        />
-      )}
-
-      {!forceManual && (
+      {(
         <div className="flex items-center justify-between mt-1 text-xs text-gray-500">
           <span className="flex items-center gap-1">
             <MapPin className="w-3 h-3" />

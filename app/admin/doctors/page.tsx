@@ -151,7 +151,7 @@ export default function DoctorsPage() {
   };
 
   const handleDelete = async (d: Doctor) => {
-    if (!confirm(`Delete ${d.full_name}? Past test requests keep the physician name.`)) return;
+    if (!confirm(`Delete ${d.full_name}${d.user_id ? ' and their login' : ''}? Doctors with test requests can't be deleted; set them Inactive instead.`)) return;
     try {
       await deleteDoctor(d, user);
       await load();
@@ -186,7 +186,7 @@ export default function DoctorsPage() {
     }
   };
 
-  const field = (key: keyof DoctorInput, label: string, opts: { required?: boolean; placeholder?: string; list?: string; type?: string } = {}) => (
+  const field = (key: keyof DoctorInput, label: string, opts: { required?: boolean; placeholder?: string; list?: string; type?: string; readOnly?: boolean; hint?: string } = {}) => (
     <div>
       <label className="block text-sm font-semibold text-gray-700 mb-2">
         {label} {opts.required && <span className="text-red-500">*</span>}
@@ -197,9 +197,11 @@ export default function DoctorsPage() {
         value={(form[key] as string) || ''}
         onChange={e => setForm({ ...form, [key]: e.target.value })}
         placeholder={opts.placeholder}
-        className={inputCls(errors[key])}
+        readOnly={opts.readOnly}
+        className={`${inputCls(errors[key])} ${opts.readOnly ? 'bg-gray-100 cursor-not-allowed' : ''}`}
       />
-      {errors[key] && <p className="text-red-500 text-sm mt-1">{errors[key]}</p>}
+      {errors[key] ? <p className="text-red-500 text-sm mt-1">{errors[key]}</p>
+        : opts.hint ? <p className="text-xs text-gray-500 mt-1">{opts.hint}</p> : null}
     </div>
   );
 
@@ -286,7 +288,16 @@ export default function DoctorsPage() {
               </div>
               {field('clinic_name', 'Clinic / Hospital', { placeholder: 'e.g. Makati Medical Center' })}
               {field('contact_no', 'Contact No.', { placeholder: 'e.g. 0917 123 4567' })}
-              {field('email', 'Email (used for the doctor login)', { type: 'email', placeholder: 'doctor@clinic.com' })}
+              {(() => {
+                // Once a login exists, the email is the sign-in name and can't be changed here
+                const hasLogin = !!editingId && !!doctors.find(d => d.id === editingId)?.user_id;
+                return field('email', 'Email (used for the doctor login)', {
+                  type: 'email',
+                  placeholder: 'doctor@clinic.com',
+                  readOnly: hasLogin,
+                  hint: hasLogin ? "This doctor already has a login, so the email can't be changed." : undefined,
+                });
+              })()}
               {!editingId && (
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">

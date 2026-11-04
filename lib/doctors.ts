@@ -118,12 +118,17 @@ export const deleteDoctor = async (doctor: Doctor, currentUser?: any): Promise<b
     MOCK_DOCTORS = MOCK_DOCTORS.filter(d => d.id !== doctor.id);
     return true;
   }
-  const { error } = await supabase.from('doctors').delete().eq('id', doctor.id);
-  if (error) {
-    console.error('Error deleting doctor:', error.message);
-    throw new Error(error.message);
-  }
-  await logDoctor(currentUser, 'delete', doctor.full_name, `Deleted doctor ${doctor.full_name}`);
+  // Server route: refuses doctors with requests, and removes the doctor's login too
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) throw new Error('Your session expired. Please sign in again.');
+  const res = await fetch('/api/admin/doctor-account', {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ doctorId: doctor.id }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || 'Could not delete the doctor.');
+  await logDoctor(currentUser, 'delete', doctor.full_name, `Deleted doctor ${doctor.full_name} (and their login, if any)`);
   return true;
 };
 

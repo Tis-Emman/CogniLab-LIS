@@ -19,6 +19,7 @@ import {
   LineChart,
   Line,
 } from 'recharts';
+import { toPHDate } from '@/lib/dates';
 
 export default function Dashboard() {
   const [stats, setStats] = useState([
@@ -131,7 +132,7 @@ export default function Dashboard() {
         for (let i = 6; i >= 0; i--) {
           const date = new Date(today);
           date.setDate(date.getDate() - i);
-          const dateStr = date.toISOString().split('T')[0];
+          const dateStr = toPHDate(date);
           revenueByDate[dateStr] = { total: 0, paid: 0 };
         }
         billings.forEach(b => {

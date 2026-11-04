@@ -23,102 +23,14 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/lib/authContext";
 import { logActivity } from "@/lib/database";
 import PhysicianPicker from "@/components/PhysicianPicker";
+import { REQUEST_SECTIONS as LAB_SECTIONS, REQUEST_TESTS as TESTS_BY_SECTION } from "@/config/testCatalog";
+import { priceRequestedTests } from "@/lib/prices";
 
 // ─── Constants (mirrors your existing LAB_SECTIONS / TESTS_BY_SECTION) ────────
 
-const LAB_SECTIONS = [
-  "BLOOD BANK",
-  "HEMATOLOGY",
-  "CLINICAL MICROSCOPY",
-  "CLINICAL CHEMISTRY",
-  "MICROBIOLOGY",
-  "IMMUNOLOGY/SEROLOGY",
-  "HISTOPATHOLOGY",
-];
 
-const TESTS_BY_SECTION: Record<string, string[]> = {
-  "BLOOD BANK": [
-    "ABO Blood Typing",
-    "Rh Typing",
-    "Crossmatching",
-    "Antibody Screening",
-    "Infectious Disease Screening",
-  ],
-  HEMATOLOGY: [
-    "CBC",
-    "Hemoglobin",
-    "Hematocrit",
-    "WBC Count",
-    "Platelet Count",
-    "RBC Indices (MCV, MCH, RDW)",
-    "Peripheral Blood Smear",
-    "ESR",
-    "PT/INR, PTT",
-    "Clotting Time",
-    "Bleeding Time",
-    "Reticulocyte Count",
-  ],
-  "CLINICAL MICROSCOPY": [
-    "Routine Urinalysis (UA)",
-    "Routine Fecalysis (FA)",
-    "Fecal Occult Blood Test",
-    "Pregnancy Test (hCG)",
-    "Pregnancy Test (PT)",
-    "Semen Analysis",
-    "KOH Mount",
-    "Wet Mount",
-  ],
-  "CLINICAL CHEMISTRY": [
-    "Lipid Profile",
-    "Liver Function Test",
-    "Renal Function Test",
-    "Electrolytes",
-    "Glucose & Diabetes Monitoring",
-    "Arterial Blood Gas",
-    "Fasting Blood Sugar (FBS)",
-    "Random Blood Sugar (RBS)",
-    "HbA1c",
-    "Uric Acid",
-    "Creatinine",
-    "BUN",
-    "Total Cholesterol",
-    "Triglycerides",
-    "HDL",
-    "LDL",
-  ],
-  MICROBIOLOGY: [
-    "Culture and Sensitivity",
-    "Gram Staining",
-    "AFB Smear",
-    "India Ink",
-    "KOH Preparation",
-  ],
-  "IMMUNOLOGY/SEROLOGY": [
-    "HBsAg (Hepa B Surface Ag) - Qualitative",
-    "Dengue NS1Ag",
-    "Leptospirosis Test",
-    "Syphilis Test (Qualitative)",
-    "Typhidot Test (IgG, IgM)",
-    "HIV Screening",
-    "RPR/VDRL",
-    "ANA",
-    "RF (Rheumatoid Factor)",
-    "C-Reactive Protein (CRP)",
-    "PSA",
-    "TSH",
-    "Free T3 / T4",
-  ],
-  HISTOPATHOLOGY: [
-    "Tissue Biopsy",
-    "Skin Biopsy",
-    "Kidney Biopsy",
-    "Liver Biopsy Fibrosis",
-    "Liver Biopsy Activity",
-    "Bone Biopsy",
-    "PAP Smear",
-    "Fine Needle Aspiration Cytology (FNAC)",
-  ],
-};
+
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -471,6 +383,14 @@ export default function TestRequestPage() {
     setSubmitting(true);
     setSubmitError(null);
 
+    // Every requested test must have a price (Admin → Test Prices)
+    const { priced, missing } = await priceRequestedTests(requestedTests);
+    if (missing.length) {
+      setSubmitting(false);
+      setSubmitError(`No price is set for: ${missing.join(", ")}. Ask the administrator to set it in Admin → Test Prices.`);
+      return;
+    }
+
     const payload = {
       patient_id: selectedPatient.id,
       patient_name: getPatientFullName(selectedPatient),
@@ -493,8 +413,8 @@ export default function TestRequestPage() {
     }
 
     // ── Auto-create billing records for each requested test ──────────────
-    for (const t of requestedTests) {
-      const price = getTestPrice(t.test_name, t.section) ?? 300;
+    for (const t of priced) {
+      const price = t.price as number;
       await addBilling({
         patient_id: selectedPatient.id,
         test_request_id: result.id,
