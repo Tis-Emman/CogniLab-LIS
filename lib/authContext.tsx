@@ -281,8 +281,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  // A6: sign out after 30 minutes without activity (shared lab computers)
+  useEffect(() => {
+    if (!user || USE_MOCK_DATA) return;
+    const IDLE_MS = 30 * 60 * 1000;
+    let last = Date.now();
+    const touch = () => { last = Date.now(); };
+    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart'] as const;
+    events.forEach((e) => window.addEventListener(e, touch, { passive: true }));
+    const timer = window.setInterval(async () => {
+      if (Date.now() - last > IDLE_MS) {
+        window.clearInterval(timer);
+        try { await supabase.auth.signOut(); } catch { /* already signed out */ }
+        window.location.href = '/login?reason=idle';
+      }
+    }, 60 * 1000);
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, touch));
+      window.clearInterval(timer);
+    };
+  }, [user]);
+
   return (
     <AuthContext.Provider value={{ user, authUser, loading, signUp, signIn, signOut }}>
+      {USE_MOCK_DATA && (
+        // I3: demo data doesn't enforce the real database rules
+        <div className="fixed bottom-0 inset-x-0 z-[100] bg-amber-500 text-white text-xs font-semibold text-center py-1">
+          DEMO MODE — sample data only; database rules (locks, permissions) are not enforced
+        </div>
+      )}
       {children}
     </AuthContext.Provider>
   );

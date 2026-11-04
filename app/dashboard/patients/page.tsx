@@ -33,6 +33,7 @@ import { logActivity } from "@/lib/database";
 import PhysicianPicker from "@/components/PhysicianPicker";
 import { REQUEST_SECTIONS as TR_LAB_SECTIONS, REQUEST_TESTS as TR_TESTS_BY_SECTION } from "@/config/testCatalog";
 import { priceRequestedTests } from "@/lib/prices";
+import { findAlreadyRequested } from "@/lib/database";
 import BarangaySelect, { FixedField } from "@/components/BarangaySelect";
 import { SERVICE_AREA } from "@/config/constants";
 
@@ -397,6 +398,12 @@ export default function PatientsPage() {
   const handleTRSubmit = async () => {
     if (!trPatient || !trPhysician.trim() || trTests.length === 0) {
       setTrError("Please fill in physician name and select at least one test.");
+      return;
+    }
+    // C3: don't request a test the patient already has on an open request
+    const dupes = await findAlreadyRequested(trPatient.id, trTests);
+    if (dupes.length) {
+      setTrError(`Already requested and still open for this patient: ${dupes.join(", ")}. Remove them or finish the existing request.`);
       return;
     }
     setTrSubmitting(true);
@@ -987,6 +994,10 @@ export default function PatientsPage() {
                 )}
               </div>
             </div>
+
+            {errors.submit && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">⛔ {errors.submit}</div>
+            )}
 
             {/* Form Actions */}
             <div className="flex gap-4 pt-6 border-t border-gray-200">

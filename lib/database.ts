@@ -298,11 +298,27 @@ export const addPatient = async (patient: any, currentUser?: any) => {
     return newPatient;
   }
 
+  // B3: the same person (same first + last name and birthdate) can't be registered twice
+  if (patient.first_name && patient.last_name && patient.birthdate) {
+    const { data: same } = await supabase
+      .from('patients')
+      .select('patient_id_no, first_name, last_name, birthdate')
+      .ilike('first_name', String(patient.first_name).trim())
+      .ilike('last_name', String(patient.last_name).trim())
+      .eq('birthdate', patient.birthdate)
+      .limit(1);
+    if (same && same.length > 0) {
+      throw new Error(
+        `${same[0].first_name} ${same[0].last_name} (born ${same[0].birthdate}) is already registered as patient ${same[0].patient_id_no}. Use the existing record instead.`,
+      );
+    }
+  }
+
   const { data, error } = await supabase
     .from('patients')
     .insert([patient])
     .select();
-  
+
   if (error) {
     console.error('Error adding patient:', error);
     throw new Error(error.message || 'Failed to add patient');
@@ -549,8 +565,28 @@ export const syncTestRequestStatus = async (testRequestId?: string | null) => {
   }
 };
 
+/**
+ * C3: which of these tests the patient ALREADY has on an open (pending or in
+ * progress) request. Requesting them again would duplicate bills and results.
+ */
+export const findAlreadyRequested = async (
+  patientId: string,
+  tests: { section: string; test_name: string }[],
+): Promise<string[]> => {
+  if (USE_MOCK_DATA || !patientId) return [];
+  const { data } = await supabase
+    .from('test_requests')
+    .select('requested_tests')
+    .eq('patient_id', patientId)
+    .in('status', ['pending', 'in_progress']);
+  const open = new Set(
+    (data || []).flatMap((r: any) => (r.requested_tests || []).map((t: any) => `${t.section}::${String(t.test_name).toLowerCase()}`)),
+  );
+  return tests.filter((t) => open.has(`${t.section}::${t.test_name.toLowerCase()}`)).map((t) => t.test_name);
+};
+
 /** Marks results as released (called when a report is printed) and syncs their requests. */
-export const releaseTestResults = async (resultIds: string[], currentUser?: any) => {
+export const releaseTestResults = async (resultIds: string[], currentUser?: any, note?: string) => {
   if (USE_MOCK_DATA || resultIds.length === 0) return;
   const { data, error } = await supabase
     .from('test_results')
@@ -571,7 +607,7 @@ export const releaseTestResults = async (resultIds: string[], currentUser?: any)
     action: 'edit',
     resource: `Report - ${first?.patient_name ?? ''}`,
     resource_type: 'Test Result',
-    description: `Released ${data?.length ?? 0} result(s) for ${first?.patient_name ?? 'patient'} by printing the report`,
+    description: `Released ${data?.length ?? 0} result(s) for ${first?.patient_name ?? 'patient'} by printing the report${note ? `. ${note}` : ''}`,
   });
 };
 

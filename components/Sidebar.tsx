@@ -65,9 +65,14 @@ export default function Sidebar({ isOpen, setIsOpen, variant = 'staff' }: Sideba
     if (variant !== 'staff' || !user) return;
     let active = true;
     const load = async () => {
+      const me = user.full_name || '';
       const [waiting, returned] = await Promise.all([
-        supabase.from('test_results').select('id', { head: true, count: 'exact' }).eq('status', 'for_verification'),
-        supabase.from('test_results').select('id', { head: true, count: 'exact' }).eq('status', 'encoding'),
+        // Waiting for QC that *you* may check (not results you encoded yourself)
+        supabase.from('test_results').select('id', { head: true, count: 'exact' })
+          .eq('status', 'for_verification').or(`created_by.is.null,created_by.neq."${me.replace(/"/g, '')}"`),
+        // Returned for correction: results *you* encoded
+        supabase.from('test_results').select('id', { head: true, count: 'exact' })
+          .eq('status', 'encoding').eq('created_by', me),
       ]);
       if (!active) return;
       setBadges({

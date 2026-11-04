@@ -18,6 +18,12 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [hasRememberedEmail, setHasRememberedEmail] = useState(false);
 
+  // Signed out for inactivity (see AuthProvider)
+  const [idleNotice, setIdleNotice] = useState(false);
+  useEffect(() => {
+    setIdleNotice(new URLSearchParams(window.location.search).get('reason') === 'idle');
+  }, []);
+
   // Load remembered email from localStorage on mount
   useEffect(() => {
     const savedEmail = localStorage.getItem('cognilab_remembered_email');
@@ -58,7 +64,7 @@ export default function LoginPage() {
   };
 
   const handleForgetDevice = () => {
-    localStorage.removeItem('lis_remembered_email');
+    localStorage.removeItem('cognilab_remembered_email');
     setEmail('');
     setRememberMe(false);
     setHasRememberedEmail(false);
@@ -120,6 +126,12 @@ export default function LoginPage() {
             <h2 className="text-3xl font-bold text-gray-800 mb-2">Welcome Back</h2>
             <p className="text-gray-600">Sign in to your CogniLab account</p>
           </div>
+
+          {idleNotice && !error && (
+            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+              You were signed out after 30 minutes of inactivity. Please sign in again.
+            </div>
+          )}
 
           {/* Error Alert */}
           {error && (

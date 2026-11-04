@@ -599,7 +599,10 @@ export default function PrintReportPage() {
     );
     if (!ok) return;
     setReleasing(true);
-    await releaseTestResults(toRelease, user);
+    const signers =
+      `Signatories: encoder ${medtech1?.displayName ?? "—"}${medtech1Manual ? " (picked manually)" : ""}, ` +
+      `QC ${medtech2?.displayName ?? "—"}${medtech2Manual ? " (picked manually)" : ""}`;
+    await releaseTestResults(toRelease, user, signers);
     await loadReportData();
     setReleasing(false);
   };
@@ -769,6 +772,9 @@ export default function PrintReportPage() {
                       <li className={selectedProgress.approved.length ? "text-green-700" : "text-gray-500"}>
                         {selectedProgress.approved.length ? "✓" : "•"} 4. Ready to release: {selectedProgress.approved.length} result(s)
                         {selectedProgress.released.length > 0 && <span className="text-gray-500"> · {selectedProgress.released.length} already released</span>}
+                        <span className="block ml-5 text-gray-500">
+                          Only ticked results are released. The request is completed once every requested test is released.
+                        </span>
                       </li>
                     </ol>
                   )}

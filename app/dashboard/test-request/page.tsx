@@ -25,6 +25,7 @@ import { logActivity } from "@/lib/database";
 import PhysicianPicker from "@/components/PhysicianPicker";
 import { REQUEST_SECTIONS as LAB_SECTIONS, REQUEST_TESTS as TESTS_BY_SECTION } from "@/config/testCatalog";
 import { priceRequestedTests } from "@/lib/prices";
+import { findAlreadyRequested } from "@/lib/database";
 
 // ─── Constants (mirrors your existing LAB_SECTIONS / TESTS_BY_SECTION) ────────
 
@@ -382,6 +383,14 @@ export default function TestRequestPage() {
 
     setSubmitting(true);
     setSubmitError(null);
+
+    // C3: don't request a test the patient already has on an open request
+    const dupes = await findAlreadyRequested(selectedPatient.id, requestedTests);
+    if (dupes.length) {
+      setSubmitting(false);
+      setSubmitError(`Already requested and still open for this patient: ${dupes.join(", ")}. Remove them or finish the existing request.`);
+      return;
+    }
 
     // Every requested test must have a price (Admin → Test Prices)
     const { priced, missing } = await priceRequestedTests(requestedTests);
