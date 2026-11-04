@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { ilikeLiteral } from '@/lib/roles';
 
 /**
  * POST /api/admin/doctor-account
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
   const { data: caller, error: callerErr } = await admin.auth.getUser(token);
   if (callerErr || !caller.user?.email) return NextResponse.json({ error: 'Invalid session.' }, { status: 401 });
 
-  const { data: callerRow } = await admin.from('users').select('role').eq('email', caller.user.email).maybeSingle();
+  const { data: callerRow } = await admin.from('users').select('role').ilike('email', ilikeLiteral(caller.user.email)).limit(1).maybeSingle();
   if (callerRow?.role !== 'admin') return NextResponse.json({ error: 'Only administrators can do this.' }, { status: 403 });
 
   // ── 2. Validate input ───────────────────────────────────────────────────────
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
   const email = String(doctor.email).toLowerCase();
 
   // Don't turn an existing staff account into a doctor account.
-  const { data: existingRow } = await admin.from('users').select('id, role').eq('email', email).maybeSingle();
+  const { data: existingRow } = await admin.from('users').select('id, role').ilike('email', ilikeLiteral(email)).limit(1).maybeSingle();
   if (existingRow && existingRow.role !== 'doctor') {
     return NextResponse.json({ error: `That email already belongs to a ${existingRow.role} account.` }, { status: 409 });
   }

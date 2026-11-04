@@ -33,3 +33,6 @@ export const ROLE_LABELS: Record<string, string> = {
 
 export const roleLabel = (role?: string): string =>
   (role && ROLE_LABELS[role]) || role || 'User';
+
+/** Escapes % and _ so an email can be matched literally with ilike. */
+export const ilikeLiteral = (s: string) => s.trim().replace(/[\\%_]/g, (c) => '\\' + c);

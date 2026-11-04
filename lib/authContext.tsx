@@ -3,6 +3,21 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from './supabaseClient';
 import { MOCK_USERS } from './mockData';
+import { ilikeLiteral } from './roles';
+
+/**
+ * Finds the signed-in user's profile. Emails are compared case-insensitively
+ * (Supabase Auth lowercases them, but some users rows were saved with capitals).
+ * If several rows share the email, prefer the one whose id is the login's id.
+ */
+const findProfileRow = async (authUserId: string, email: string) => {
+  const { data, error } = await supabase.from('users').select('*').ilike('email', ilikeLiteral(email));
+  if (error) throw error;
+  const rows = data || [];
+  return rows.find((r: any) => r.id === authUserId) ?? rows.find((r: any) => r.signatory_name) ?? rows[0] ?? null;
+};
+
+const sameEmail = (a?: string | null, b?: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 
 const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 
@@ -83,7 +98,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAuthUser(session.user);
 
       // A token refresh doesn't change who is signed in; keep the loaded profile.
-      if (profileEmailRef.current === session.user.email) {
+      if (sameEmail(profileEmailRef.current, session.user.email)) {
         setLoading(false);
         return;
       }
@@ -137,16 +152,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       console.log('Looking up user with email:', userEmail);
 
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', userEmail)
-        .maybeSingle();
-
-      if (error) {
-        console.error('Database query error:', error.message, error.details);
-        throw error;
-      }
+      const data = await findProfileRow(authUserId, userEmail);
 
       if (data) {
         console.log('User profile found:', data);
@@ -164,8 +170,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null);
       }
     } catch (error) {
+      // A network hiccup (e.g. right after the tab wakes up) must not log the
+      // user out. Only clear the user if no profile was loaded yet.
       console.error('Error fetching user profile:', error);
-      setUser(null);
+      if (!profileEmailRef.current) setUser(null);
     }
   };
 
@@ -225,13 +233,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAuthUser(data.user);
 
       // Fetch user profile from custom users table
-      const { data: userData, error: profileError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email)
-        .maybeSingle();
-
-      if (profileError) {
+      let userData: any = null;
+      try {
+        userData = await findProfileRow(data.user.id, data.user.email ?? email);
+      } catch (profileError) {
         console.error('Profile lookup error:', profileError);
         throw new Error('Failed to fetch user profile');
       }

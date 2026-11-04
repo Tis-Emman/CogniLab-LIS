@@ -210,7 +210,7 @@ export const addUser = async (user: {
     .insert([
       {
         full_name: user.full_name,
-        email: user.email,
+        email: user.email.trim().toLowerCase(),
         role: user.role,
         department: user.department,
         encryption_key: encryptionKey,

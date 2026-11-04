@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient';
 import { logActivity } from './database';
+import { ilikeLiteral } from './roles';
 
 const USE_MOCK_DATA = process.env.NEXT_PUBLIC_USE_MOCK_DATA === 'true';
 
@@ -58,7 +59,7 @@ export const fetchDoctorByUser = async (user: { id: string; email: string }): Pr
   if (USE_MOCK_DATA) return MOCK_DOCTORS[0] || null;
   const { data: byId } = await supabase.from('doctors').select('*').eq('user_id', user.id).maybeSingle();
   if (byId) return byId as Doctor;
-  const { data: byEmail } = await supabase.from('doctors').select('*').ilike('email', user.email).maybeSingle();
+  const { data: byEmail } = await supabase.from('doctors').select('*').ilike('email', ilikeLiteral(user.email)).limit(1).maybeSingle();
   return (byEmail as Doctor) || null;
 };
 
