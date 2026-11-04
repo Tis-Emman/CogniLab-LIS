@@ -1379,7 +1379,13 @@ export default function QualityCheckingPage() {
               </thead>
               <tbody>
                 {filteredResults.map((result) => {
-                  const alreadyChecked = checkedResultIds.has(result.id);
+                  // Needs review when it's waiting for verification, even if an older
+                  // version was checked before (e.g. edited or amended after a PASS).
+                  const needsReview =
+                    result.status === "for_verification" ||
+                    (!checkedResultIds.has(result.id) && !["approved", "released", "encoding"].includes(result.status));
+                  const alreadyChecked = !needsReview;
+                  const reReview = needsReview && checkedResultIds.has(result.id);
                   return (
                     <tr
                       key={result.id}
@@ -1399,8 +1405,11 @@ export default function QualityCheckingPage() {
                             <CheckCircle className="w-3 h-3" /> QC Done
                           </span>
                         ) : (
-                          <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold flex items-center gap-1 w-fit">
-                            <Clock className="w-3 h-3" /> Pending
+                          <span
+                            title={reReview ? "Edited after an earlier QC check — needs to be verified again" : undefined}
+                            className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-semibold flex items-center gap-1 w-fit"
+                          >
+                            <Clock className="w-3 h-3" /> {reReview ? "Re-check" : "Pending"}
                           </span>
                         )}
                       </td>

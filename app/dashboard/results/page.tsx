@@ -15,6 +15,10 @@ import {
   ChevronRight,
   Check,
   Trash2,
+  ShieldCheck,
+  RotateCcw,
+  Lock,
+  X,
 } from "lucide-react";
 import {
   fetchTestResults,
@@ -531,6 +535,11 @@ export default function TestResultsPage() {
   // Optional "what did you correct?" note, shown to the Senior MedTech in QC
   const [correctionNote, setCorrectionNote] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
+  // Styled confirmations (replace the browser's confirm/prompt boxes)
+  const [confirmEdit, setConfirmEdit] = useState<TestResult | null>(null);
+  const [amendTarget, setAmendTarget] = useState<TestResult | null>(null);
+  const [amendReason, setAmendReason] = useState("");
+  const [amending, setAmending] = useState(false);
   const [results, setResults] = useState<TestResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -1352,12 +1361,8 @@ export default function TestResultsPage() {
       setActionError("Released results are locked. A Senior MedTech must use Amend to correct them.");
       return;
     }
-    if (
-      result.status === "approved" && !opts.skipConfirm &&
-      !window.confirm(
-        "This result is already verified (Approved).\n\nIf you change it, it goes back to a Senior MedTech for re-verification and can't be released until checked again. Continue?"
-      )
-    ) {
+    if (result.status === "approved" && !opts.skipConfirm) {
+      setConfirmEdit(result); // ask first, in the styled dialog
       return;
     }
     setActionError(null);
@@ -1475,23 +1480,25 @@ export default function TestResultsPage() {
   };
 
   // Senior MedTech re-opens a released result so it can be corrected
-  const handleAmend = async (result: TestResult) => {
-    const reason = window.prompt(
-      `Amend released result: ${result.test_name} (${result.patient_name})\n\n` +
-      "It will be hidden from the doctor until it is re-verified and released again.\n\nReason for the amendment:"
-    );
-    if (reason === null) return;
-    if (!reason.trim()) {
-      setActionError("A reason is required to amend a released result.");
-      return;
-    }
+  const handleAmend = (result: TestResult) => {
+    setAmendReason("");
+    setAmendTarget(result); // opens the styled Amend dialog
+  };
+
+  const confirmAmend = async () => {
+    if (!amendTarget || !amendReason.trim()) return;
+    setAmending(true);
     try {
-      const reopened = await amendTestResult(result.id, reason, user);
+      const reopened = await amendTestResult(amendTarget.id, amendReason, user);
       await loadResults();
-      handleEdit({ ...result, status: reopened.status }, { skipConfirm: true });
-      setCorrectionNote(`Amendment: ${reason.trim()}`);
+      handleEdit({ ...amendTarget, status: reopened.status }, { skipConfirm: true });
+      setCorrectionNote(`Amendment: ${amendReason.trim()}`);
+      setAmendTarget(null);
     } catch (err: any) {
       setActionError(err.message);
+      setAmendTarget(null);
+    } finally {
+      setAmending(false);
     }
   };
 
@@ -3222,6 +3229,125 @@ export default function TestResultsPage() {
       </div>
 
       {/* Delete Confirmation Modal */}
+      {/* ── Edit an APPROVED result: confirm re-verification ───────────────── */}
+      {confirmEdit && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4" style={{ animation: "fadeIn 0.2s ease-out" }}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" style={{ animation: "fadeInScale 0.25s ease-out" }}>
+            <div className="bg-gradient-to-r from-[#3B6255] to-green-900 text-white px-6 py-5 flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold">Edit a verified result?</h3>
+                <p className="text-sm text-[#CBDED3]">{confirmEdit.test_name} · {confirmEdit.patient_name}</p>
+              </div>
+              <button onClick={() => setConfirmEdit(null)} className="text-white/70 hover:text-white" aria-label="Close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <p className="text-sm text-gray-700">
+                This result was already checked and <b>approved</b> by a Senior MedTech.
+                If you save a change, it must be verified again before it can be released.
+              </p>
+
+              {/* What will happen */}
+              <div className="flex items-center justify-center gap-3 text-xs font-semibold">
+                <span className="px-3 py-1.5 rounded-full bg-purple-100 text-purple-800">APPROVED</span>
+                <ArrowRight className="w-4 h-4 text-gray-400" />
+                <span className="px-3 py-1.5 rounded-full bg-orange-100 text-orange-800">FOR VERIFICATION</span>
+              </div>
+
+              <ul className="text-sm text-gray-600 space-y-1.5 bg-gray-50 rounded-lg p-4">
+                <li className="flex gap-2"><Check className="w-4 h-4 text-[#3B6255] flex-shrink-0 mt-0.5" /> Opening the form changes nothing. Only <b>Save</b> does.</li>
+                <li className="flex gap-2"><RotateCcw className="w-4 h-4 text-orange-600 flex-shrink-0 mt-0.5" /> After saving, it goes back to Quality Checking for re-verification.</li>
+                <li className="flex gap-2"><Lock className="w-4 h-4 text-gray-500 flex-shrink-0 mt-0.5" /> It can&apos;t be released until a Senior MedTech passes it again.</li>
+              </ul>
+            </div>
+
+            <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setConfirmEdit(null)}
+                className="px-5 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition font-semibold"
+              >
+                Keep as approved
+              </button>
+              <button
+                onClick={() => { const r = confirmEdit; setConfirmEdit(null); handleEdit(r, { skipConfirm: true }); }}
+                className="px-5 py-2 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg transition font-semibold flex items-center gap-2"
+              >
+                <Edit2 className="w-4 h-4" /> Edit result
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Amend a RELEASED result (Senior MedTech) ─────────────────────────── */}
+      {amendTarget && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4" style={{ animation: "fadeIn 0.2s ease-out" }}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden" style={{ animation: "fadeInScale 0.25s ease-out" }}>
+            <div className="bg-gradient-to-r from-amber-500 to-amber-700 text-white px-6 py-5 flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold">Amend a released result</h3>
+                <p className="text-sm text-amber-100">{amendTarget.test_name} · {amendTarget.patient_name}</p>
+              </div>
+              <button onClick={() => setAmendTarget(null)} className="text-white/80 hover:text-white" aria-label="Close">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="flex items-center justify-center gap-3 text-xs font-semibold">
+                <span className="px-3 py-1.5 rounded-full bg-green-100 text-green-800">RELEASED</span>
+                <ArrowRight className="w-4 h-4 text-gray-400" />
+                <span className="px-3 py-1.5 rounded-full bg-orange-100 text-orange-800">FOR VERIFICATION</span>
+              </div>
+
+              <ul className="text-sm text-gray-600 space-y-1.5 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                <li>• The requesting doctor <b>won&apos;t see this result</b> until it&apos;s re-verified and released again.</li>
+                <li>• The edit form opens next so you can correct the value.</li>
+                <li>• Your reason is saved in the audit log.</li>
+              </ul>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Reason for the amendment <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={amendReason}
+                  onChange={(e) => setAmendReason(e.target.value)}
+                  rows={3}
+                  autoFocus
+                  placeholder="e.g. Wrong urine color encoded; re-examined specimen"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800 bg-white focus:ring-2 focus:ring-amber-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setAmendTarget(null)}
+                className="px-5 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAmend}
+                disabled={!amendReason.trim() || amending}
+                className="px-5 py-2 bg-gradient-to-r from-amber-500 to-amber-700 text-white rounded-lg hover:shadow-lg transition font-semibold flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RotateCcw className="w-4 h-4" /> {amending ? "Re-opening…" : "Amend & edit"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {resultToDelete && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4" style={{ animation: "fadeIn 0.3s ease-out" }}>
           <div className="bg-white rounded-lg shadow-2xl max-w-md w-full" style={{ animation: "fadeInScale 0.3s ease-out" }}>
