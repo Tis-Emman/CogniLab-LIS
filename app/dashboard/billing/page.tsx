@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CheckCircle, Clock, TrendingUp, AlertCircle, Download, FileText } from 'lucide-react';
+import { CheckCircle, Clock, TrendingUp, AlertCircle, Download, FileText, Banknote, Trash2, Undo2, Receipt, X } from 'lucide-react';
 import { fetchBilling, updateBillingStatus, deleteBilling, logActivity } from '@/lib/database';
 import { useAuth } from '@/lib/authContext';
 import { supabase } from '@/lib/supabaseClient';
@@ -36,6 +36,28 @@ export default function BillingPage() {
   // "Mark Paid" dialog: records the official receipt (OR) number
   const [payTarget, setPayTarget] = useState<BillingRecord | null>(null);
   const [orNumber, setOrNumber] = useState('');
+  const [paying, setPaying] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const peso = (n: number) => `₱${Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // Records the payment from the dialog, then confirms it with a toast
+  const confirmPayment = async () => {
+    if (!payTarget || paying) return;
+    setPaying(true);
+    const target = payTarget;
+    const ok = await handlePaymentStatusChange(target.id as string, 'paid', orNumber);
+    setPaying(false);
+    setPayTarget(null);
+    if (ok) {
+      setToast(`Payment recorded · ${target.test_name || target.testName}${orNumber.trim() ? ` · OR #${orNumber.trim()}` : ''}`);
+    }
+  };
 
   // Inject animation keyframes
   useEffect(() => {
@@ -128,7 +150,7 @@ export default function BillingPage() {
       setBillingError(null);
     } catch (err: any) {
       setBillingError(err.message);
-      return;
+      return false;
     }
 
     if (newStatus === 'paid' && billing) {
@@ -172,6 +194,7 @@ export default function BillingPage() {
       description: `Changed billing status to ${newStatus.toUpperCase()}`,
     });
     await loadBilling();
+    return true;
   };
 
   const handleDeleteBilling = async (id: string) => {
@@ -377,59 +400,72 @@ export default function BillingPage() {
                   }
                   return true;
                 })
-                .map((billing) => (
-                <tr key={billing.id} className="border-b border-gray-100 hover:bg-[#F0F4F1] transition">
-                  <td className="py-4 px-8 font-medium text-gray-800">{billing.patient_name || billing.patientName || ''}</td>
+                .map((billing) => {
+                  const isPaid = (billing.status || billing.paymentStatus) === 'paid';
+                  return (
+                <tr
+                  key={billing.id}
+                  className={`border-b border-gray-100 transition ${
+                    isPaid
+                      ? 'hover:bg-[#F0F4F1]'
+                      : 'bg-amber-50/60 hover:bg-amber-50 shadow-[inset_4px_0_0_#D97706]'
+                  }`}
+                >
+                  <td className={`py-4 px-8 font-medium ${isPaid ? 'text-gray-600' : 'text-gray-900'}`}>{billing.patient_name || billing.patientName || ''}</td>
                   <td className="py-4 px-8 text-gray-600">{billing.test_name || billing.testName || ''}</td>
-                  <td className="py-4 px-8 font-semibold text-[#3B6255]">₱{billing.amount}</td>
+                  <td className={`py-4 px-8 font-bold tabular-nums ${isPaid ? 'text-gray-500' : 'text-gray-900'}`}>{peso(billing.amount)}</td>
                   <td className="py-4 px-8">
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                        (billing.status || billing.paymentStatus) === 'paid'
-                          ? 'bg-green-100 text-green-800'
-                          : 'bg-yellow-100 text-yellow-800'
-                      }`}
-                    >
-                      {(billing.status || billing.paymentStatus) === 'paid' ? '✓ Paid' : '⏳ Unpaid'}
-                    </span>
-                    {(billing.status || billing.paymentStatus) === 'paid' && billing.or_number && (
-                      <p className="text-xs text-gray-500 mt-1">OR #{billing.or_number}</p>
+                    {isPaid ? (
+                      <div>
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-800">
+                          <CheckCircle className="w-3.5 h-3.5" /> Paid
+                        </span>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {billing.or_number ? `OR #${billing.or_number}` : 'No OR no.'}
+                          {billing.date_paid ? ` · ${new Date(billing.date_paid).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })}` : ''}
+                        </p>
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                        <Clock className="w-3.5 h-3.5" /> Unpaid
+                      </span>
                     )}
                   </td>
                   <td className="py-4 px-8 text-gray-600">{billing.date_created || billing.dateCreated || ''}</td>
-                  <td className="py-4 px-8 flex gap-2">
-                    {(billing.status || billing.paymentStatus) === 'unpaid' ? (
-                      <>
+                  <td className="py-4 px-8">
+                    {!isPaid ? (
+                      <div className="flex items-center gap-2">
                         <button
                           onClick={() => { setOrNumber(''); setPayTarget(billing); }}
-                          className="text-green-600 hover:text-green-800 font-semibold text-sm"
-                          title="Mark as Paid"
+                          className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-[#3B6255] to-green-800 text-white text-sm font-semibold shadow-sm hover:shadow-md hover:scale-[1.03] active:scale-95 transition"
+                          title="Record the payment for this test"
                         >
-                          Mark Paid
+                          <Banknote className="w-4 h-4" /> Collect payment
                         </button>
                         <button
                           onClick={() => handleDeleteBilling(billing.id as string)}
-                          className="text-red-600 hover:text-red-800 font-semibold text-sm"
-                          title="Delete"
+                          className="p-2 rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
+                          title="Delete this unpaid bill"
+                          aria-label="Delete this unpaid bill"
                         >
-                          Delete
+                          <Trash2 className="w-4 h-4" />
                         </button>
-                      </>
+                      </div>
                     ) : (
-                      <>
-                        <button
-                          onClick={() => handleMarkUnpaid(billing)}
-                          className="text-orange-600 hover:text-orange-800 font-semibold text-sm"
-                          title="Mark as Unpaid (not allowed once its results are approved or released)"
-                        >
-                          Mark Unpaid
-                        </button>
-                        {/* Paid bills are financial records and can't be deleted */}
-                      </>
+                      <button
+                        onClick={() => {
+                          if (confirm('Undo this payment? (Not allowed once its results are approved or released.)')) handleMarkUnpaid(billing);
+                        }}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold text-gray-500 hover:text-orange-700 hover:bg-orange-50 transition"
+                        title="Undo payment (not allowed once its results are approved or released)"
+                      >
+                        <Undo2 className="w-3.5 h-3.5" /> Undo
+                      </button>
                     )}
                   </td>
                 </tr>
-              ))}
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -437,43 +473,78 @@ export default function BillingPage() {
 
 
       {payTarget && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
-            <div className="bg-gradient-to-r from-[#3B6255] to-green-900 text-white px-6 py-5">
-              <h3 className="text-lg font-bold">Record payment</h3>
-              <p className="text-sm text-[#CBDED3]">
-                {payTarget.patient_name || payTarget.patientName} · {payTarget.test_name || payTarget.testName} · ₱{payTarget.amount.toFixed(2)}
-              </p>
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" style={{ animation: 'fadeIn 0.15s ease-out' }}>
+          <form
+            onSubmit={(e) => { e.preventDefault(); confirmPayment(); }}
+            className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+          >
+            <div className="bg-gradient-to-r from-[#3B6255] to-green-900 text-white px-6 py-5 flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center"><Receipt className="w-5 h-5" /></div>
+                <div>
+                  <h3 className="text-lg font-bold">Collect payment</h3>
+                  <p className="text-sm text-[#CBDED3]">{payTarget.patient_name || payTarget.patientName}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setPayTarget(null)} className="text-white/70 hover:text-white" aria-label="Close"><X className="w-5 h-5" /></button>
             </div>
-            <div className="p-6 space-y-3">
-              <label className="block text-sm font-semibold text-gray-700">
-                Official Receipt (OR) No. <span className="text-gray-400 font-normal">(recommended)</span>
-              </label>
-              <input
-                type="text"
-                value={orNumber}
-                onChange={(e) => setOrNumber(e.target.value)}
-                placeholder="e.g. 0012345"
-                autoFocus
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-800 bg-white focus:ring-2 focus:ring-[#3B6255] outline-none"
-              />
-              <p className="text-xs text-gray-500">The payment date is recorded automatically. The OR number shows on the bill for auditing.</p>
+
+            <div className="p-6 space-y-5">
+              {/* The amount is the first thing the cashier sees */}
+              <div className="rounded-xl bg-[#F0F4F1] border border-[#CBDED3] px-5 py-4 flex items-end justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Amount due</p>
+                  <p className="text-sm text-gray-700 mt-1">{payTarget.test_name || payTarget.testName}</p>
+                </div>
+                <p className="text-3xl font-bold text-[#15302A] tabular-nums">{peso(payTarget.amount)}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Official Receipt (OR) No. <span className="text-gray-400 font-normal">(recommended)</span>
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={orNumber}
+                  onChange={(e) => setOrNumber(e.target.value)}
+                  placeholder="e.g. 0012345"
+                  autoFocus
+                  className="w-full px-4 py-3 text-lg border-2 border-gray-300 rounded-lg text-gray-800 bg-white focus:border-[#3B6255] focus:ring-2 focus:ring-[#3B6255]/30 outline-none tracking-wide"
+                />
+                <p className="text-xs text-gray-500 mt-2">Press <b>Enter</b> to confirm. Today’s date is recorded as the payment date.</p>
+              </div>
             </div>
+
             <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end gap-3">
               <button
+                type="button"
                 onClick={() => setPayTarget(null)}
-                className="px-5 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 font-semibold"
+                className="px-5 py-2.5 text-gray-700 rounded-lg hover:bg-gray-100 font-semibold"
               >
                 Cancel
               </button>
               <button
-                onClick={async () => { const t = payTarget; setPayTarget(null); await handlePaymentStatusChange(t.id as string, 'paid', orNumber); }}
-                className="px-5 py-2 bg-gradient-to-r from-[#3B6255] to-green-900 text-white rounded-lg hover:shadow-lg font-semibold"
+                type="submit"
+                disabled={paying}
+                className="inline-flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-[#3B6255] to-green-800 text-white rounded-lg hover:shadow-lg font-semibold disabled:opacity-60"
               >
-                Mark as Paid
+                <CheckCircle className="w-4 h-4" /> {paying ? 'Recording…' : `Confirm ${peso(payTarget.amount)}`}
               </button>
             </div>
-          </div>
+          </form>
+        </div>
+      )}
+
+      {toast && (
+        <div
+          role="status"
+          className="fixed top-6 right-6 z-[60] flex items-center gap-3 bg-[#15302A] text-white px-5 py-3 rounded-xl shadow-2xl"
+          style={{ animation: 'fadeIn 0.2s ease-out' }}
+        >
+          <CheckCircle className="w-5 h-5 text-green-300" />
+          <span className="text-sm font-semibold">{toast}</span>
+          <button onClick={() => setToast(null)} className="text-white/60 hover:text-white" aria-label="Dismiss"><X className="w-4 h-4" /></button>
         </div>
       )}
     </div>
