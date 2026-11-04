@@ -45,6 +45,7 @@ interface TestResult {
   unit: string;
   status: string;
   date_created: string;
+  correction_note?: string | null;
 }
 
 interface QualityCheck {
@@ -713,11 +714,16 @@ export default function QualityCheckingPage() {
     // Move the result through the workflow automatically:
     // PASS -> approved (ready for the report), FAIL -> back to encoding for correction.
     if (selectedResult.status !== "released") {
-      await updateTestResult(
-        selectedResult.id,
-        { status: derivedQcResult === "pass" ? "approved" : "encoding" },
-        user,
-      );
+      try {
+        await updateTestResult(
+          selectedResult.id,
+          { status: derivedQcResult === "pass" ? "approved" : "encoding" },
+          user,
+        );
+      } catch (err: any) {
+        setSubmitError(`QC was saved, but the result status could not be updated: ${err.message}`);
+        return;
+      }
     }
 
     setSubmitSuccess({
@@ -1036,6 +1042,11 @@ export default function QualityCheckingPage() {
                 </p>
               </div>
             </div>
+            {selectedResult.correction_note && (
+              <div className="mt-3 text-xs bg-blue-50 border border-blue-200 text-blue-800 rounded-lg px-3 py-2">
+                <span className="font-semibold">Correction note from the encoder:</span> {selectedResult.correction_note}
+              </div>
+            )}
           </div>
 
           {/* ── QC Checklist ─────────────────────────────────────────────── */}

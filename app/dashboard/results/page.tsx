@@ -21,6 +21,7 @@ import {
   addTestResult,
   updateTestResult,
   deleteTestResult,
+  amendTestResult,
   fetchPatients,
   fetchBilling,
   getAbnormalStatus,
@@ -28,6 +29,7 @@ import {
 } from "@/lib/database";
 import { TEST_REFERENCE_RANGES } from "@/lib/mockData";
 import { useAuth } from "@/lib/authContext";
+import { isSeniorMedtech } from "@/lib/roles";
 import { supabase } from "@/lib/supabaseClient";
 
 // What happens next at each status. Statuses are moved by the system, not by hand:
@@ -526,6 +528,9 @@ export default function TestResultsPage() {
   const [resultValue, setResultValue] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // Optional "what did you correct?" note, shown to the Senior MedTech in QC
+  const [correctionNote, setCorrectionNote] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
   const [results, setResults] = useState<TestResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -978,7 +983,7 @@ export default function TestResultsPage() {
           unit: "",
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
       } else if (selectedTest === "RBC Indices (MCV, MCH, RDW)") {
         const components = [
@@ -1015,9 +1020,28 @@ export default function TestResultsPage() {
               unit: editedComponent.unit,
             },
             user,
+            { note: correctionNote },
           );
-          // Upsert the remaining two components as new records
+          // Update the other two components if they already exist; only add missing ones
+          const edited = results.find((r) => r.id === editingId);
           for (const c of rbcComponents.filter((c) => c.name !== editedComponent.name)) {
+            const existing = results.find(
+              (r) =>
+                r.id !== editingId &&
+                r.patient_name === edited?.patient_name &&
+                r.section === edited?.section &&
+                r.test_name === c.name &&
+                r.status !== "released",
+            );
+            if (existing) {
+              await updateTestResult(
+                existing.id,
+                { result_value: c.value, reference_range: c.range, unit: c.unit },
+                user,
+                { note: correctionNote },
+              );
+              continue;
+            }
             await addTestResult(
               {
                 patient_name: patientName,
@@ -1060,7 +1084,7 @@ export default function TestResultsPage() {
           unit: "g/dL",
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
       } else if (selectedTest === "PT/INR, PTT") {
         const coagLines = [
@@ -1077,7 +1101,7 @@ export default function TestResultsPage() {
           unit: "",
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
 
         // ── FIXED: Routine Urinalysis — single record ─────────────────────────
@@ -1102,7 +1126,7 @@ export default function TestResultsPage() {
           unit: "",
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
 
         // ── FIXED: Culture and Sensitivity — single record ────────────────────
@@ -1122,7 +1146,7 @@ export default function TestResultsPage() {
           unit: "",
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
 
         // ── ADD THIS ────────────────────────────────────────────────────────
@@ -1145,7 +1169,7 @@ export default function TestResultsPage() {
           unit: "",
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
       } else if (selectedTest === "Lipid Profile") {
         const sub = LIPID_PROFILE_TESTS.find((t) => t.name === lipidSubTest)!;
@@ -1158,7 +1182,7 @@ export default function TestResultsPage() {
           unit: sub.unit,
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
       } else if (selectedTest === "Liver Function Test") {
         const sub = LIVER_FUNCTION_TESTS.find((t) => t.name === lftSubTest)!;
@@ -1171,7 +1195,7 @@ export default function TestResultsPage() {
           unit: sub.unit,
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
       } else if (selectedTest === "Renal Function Test") {
         const sub = RENAL_FUNCTION_TESTS.find((t) => t.name === rftSubTest)!;
@@ -1184,7 +1208,7 @@ export default function TestResultsPage() {
           unit: sub.unit,
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
       } else if (selectedTest === "Glucose & Diabetes Monitoring") {
         const sub = GLUCOSE_TESTS.find((t) => t.name === glucoseSubTest)!;
@@ -1197,7 +1221,7 @@ export default function TestResultsPage() {
           unit: sub.unit,
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
       } else if (selectedTest === "Electrolytes") {
         const resultString = [
@@ -1218,7 +1242,7 @@ export default function TestResultsPage() {
           unit: "",
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
       } else if (selectedTest === "Arterial Blood Gas") {
         const resultString = [
@@ -1237,7 +1261,7 @@ export default function TestResultsPage() {
           unit: "",
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
       } else {
         const payload = {
@@ -1249,14 +1273,16 @@ export default function TestResultsPage() {
           unit: testDetails!.unit,
         };
         editingId
-          ? await updateTestResult(editingId, payload, user)
+          ? await updateTestResult(editingId, payload, user, { note: correctionNote })
           : await addTestResult(payload, user, true);
       }
 
       await loadResults();
       resetForm();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving test result:", error);
+      setErrors((prev) => ({ ...prev, form: error?.message || "Could not save the result." }));
+      return;
     } finally {
       setSubmitting(false);
     }
@@ -1271,6 +1297,7 @@ export default function TestResultsPage() {
     setErrors({});
     setShowForm(false);
     setEditingId(null);
+    setCorrectionNote("");
     setCbcValues({
       neutrophils: "",
       lymphocytes: "",
@@ -1320,7 +1347,21 @@ export default function TestResultsPage() {
     setAbgValues(INITIAL_ABG);
   };
 
-  const handleEdit = (result: TestResult) => {
+  const handleEdit = (result: TestResult, opts: { skipConfirm?: boolean } = {}) => {
+    if (result.status === "released" && !opts.skipConfirm) {
+      setActionError("Released results are locked. A Senior MedTech must use Amend to correct them.");
+      return;
+    }
+    if (
+      result.status === "approved" && !opts.skipConfirm &&
+      !window.confirm(
+        "This result is already verified (Approved).\n\nIf you change it, it goes back to a Senior MedTech for re-verification and can't be released until checked again. Continue?"
+      )
+    ) {
+      return;
+    }
+    setActionError(null);
+    setCorrectionNote("");
     setPatientName(result.patient_name);
     setPatientSearch(result.patient_name);
     setSelectedSection(result.section);
@@ -1423,9 +1464,35 @@ export default function TestResultsPage() {
 
   const handleDelete = async () => {
     if (!resultToDelete) return;
-    await deleteTestResult(resultToDelete.id);
+    try {
+      await deleteTestResult(resultToDelete.id, user);
+      setActionError(null);
+    } catch (err: any) {
+      setActionError(err.message);
+    }
     await loadResults();
     setResultToDelete(null);
+  };
+
+  // Senior MedTech re-opens a released result so it can be corrected
+  const handleAmend = async (result: TestResult) => {
+    const reason = window.prompt(
+      `Amend released result: ${result.test_name} (${result.patient_name})\n\n` +
+      "It will be hidden from the doctor until it is re-verified and released again.\n\nReason for the amendment:"
+    );
+    if (reason === null) return;
+    if (!reason.trim()) {
+      setActionError("A reason is required to amend a released result.");
+      return;
+    }
+    try {
+      const reopened = await amendTestResult(result.id, reason, user);
+      await loadResults();
+      handleEdit({ ...result, status: reopened.status }, { skipConfirm: true });
+      setCorrectionNote(`Amendment: ${reason.trim()}`);
+    } catch (err: any) {
+      setActionError(err.message);
+    }
   };
 
   if (loading)
@@ -1506,6 +1573,12 @@ export default function TestResultsPage() {
 
   return (
     <div className="space-y-8" style={{ animation: "fadeIn 0.5s ease-out" }}>
+      {actionError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex justify-between gap-4">
+          <span>{actionError}</span>
+          <button onClick={() => setActionError(null)} className="font-bold">✕</button>
+        </div>
+      )}
       {/* Header */}
       <div
         className="flex items-center justify-between"
@@ -1559,12 +1632,14 @@ export default function TestResultsPage() {
                   type="text"
                   placeholder="Search patient name or ID..."
                   value={patientSearch}
+                  readOnly={!!editingId}
+                  title={editingId ? "The patient can't be changed when editing a result" : undefined}
                   onChange={(e) => {
                     setPatientSearch(e.target.value);
                     setPatientName("");
                     setShowPatientDropdown(true);
                   }}
-                  onFocus={() => setShowPatientDropdown(true)}
+                  onFocus={() => { if (!editingId) setShowPatientDropdown(true); }}
                   className={`w-full px-4 py-3 border-2 rounded-lg focus:ring-2 focus:ring-[#3B6255] focus:border-[#3B6255] outline-none transition text-gray-800 bg-white font-medium ${errors.patientName ? "border-red-500 bg-red-50" : "border-gray-300 hover:border-[#8BA49A]"}`}
                 />
                 {showPatientDropdown && patientSearch && (
@@ -1627,6 +1702,7 @@ export default function TestResultsPage() {
               </label>
               <select
                 value={selectedSection}
+                disabled={!!editingId}
                 onChange={(e) => {
                   setSelectedSection(e.target.value);
                   setSelectedTest("");
@@ -1661,6 +1737,7 @@ export default function TestResultsPage() {
                 </label>
                 <select
                   value={selectedTest}
+                  disabled={!!editingId}
                   onChange={(e) => {
                     setSelectedTest(e.target.value);
                     setResultValue("");
@@ -2754,6 +2831,27 @@ export default function TestResultsPage() {
               </div>
             )}
 
+            {editingId && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-xs text-blue-800 mb-2">
+                  Editing locks the patient, section and test. Saving sends this result to a Senior MedTech for verification.
+                </p>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                  What did you correct? <span className="text-gray-400 font-normal">(optional, shown to the Senior MedTech)</span>
+                </label>
+                <input
+                  type="text"
+                  value={correctionNote}
+                  onChange={(e) => setCorrectionNote(e.target.value)}
+                  placeholder="e.g. Re-ran platelet count; previous value was a typo"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-gray-800 bg-white"
+                />
+              </div>
+            )}
+            {errors.form && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{errors.form}</div>
+            )}
+
             {/* Form Actions */}
             <div className="flex gap-4 pt-6 border-t border-gray-200">
               {(() => {
@@ -3058,14 +3156,31 @@ export default function TestResultsPage() {
                         </span>
                       </td>
                       <td className="py-4 px-8 flex gap-2">
-                        <button
-                          onClick={() => handleEdit(result)}
-                          className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-sm flex items-center gap-1"
-                          title="Edit Result"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                          Edit
-                        </button>
+                        {result.status === "released" ? (
+                          isSeniorMedtech(user) ? (
+                            <button
+                              onClick={() => handleAmend(result)}
+                              className="text-amber-700 hover:text-amber-900 font-semibold text-sm flex items-center gap-1"
+                              title="Re-open this released result to correct it (reason required)"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                              Amend
+                            </button>
+                          ) : (
+                            <span className="text-gray-400 text-sm flex items-center gap-1" title="Released results are locked. Ask a Senior MedTech to amend.">
+                              🔒 Locked
+                            </span>
+                          )
+                        ) : (
+                          <button
+                            onClick={() => handleEdit(result)}
+                            className="text-[#3B6255] hover:text-[#5A7669] font-semibold text-sm flex items-center gap-1"
+                            title={result.status === "approved" ? "Editing sends it back for re-verification" : "Edit Result"}
+                          >
+                            <Edit2 className="w-4 h-4" />
+                            {result.status === "approved" ? "Edit (re-verify)" : "Edit"}
+                          </button>
+                        )}
                         {result.status === "released" && (
                           billing?.status === "paid" ? (
                             <button
@@ -3087,14 +3202,16 @@ export default function TestResultsPage() {
                             </button>
                           )
                         )}
-                        <button
-                          onClick={() => setResultToDelete(result)}
-                          className="text-red-500 hover:text-red-700 font-semibold text-sm flex items-center gap-1"
-                          title="Delete Result"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete
-                        </button>
+                        {result.status !== "approved" && result.status !== "released" && (
+                          <button
+                            onClick={() => setResultToDelete(result)}
+                            className="text-red-500 hover:text-red-700 font-semibold text-sm flex items-center gap-1"
+                            title="Delete Result"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

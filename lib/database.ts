@@ -716,7 +716,20 @@ export const addTestResult = async (result: any, currentUser?: any, skipBilling?
 };
 
 
-export const updateTestResult = async (id: string, result: any, currentUser?: any) => {
+/**
+ * Updates a test result and enforces the editing rules:
+ *  - patient, section and links can't be moved to another patient by an edit
+ *  - editing a returned/pending result resubmits it (-> for_verification)
+ *  - editing an APPROVED result needs re-verification (-> for_verification)
+ *  - RELEASED results are locked; use amendTestResult first (Senior MedTech)
+ * `note` is an optional "what did you correct?" message for the senior.
+ */
+export const updateTestResult = async (
+  id: string,
+  result: any,
+  currentUser?: any,
+  opts: { note?: string } = {},
+) => {
   if (USE_MOCK_DATA) {
     const index = MOCK_TEST_RESULTS.findIndex(r => r.id === id);
     if (index !== -1) {
@@ -746,25 +759,55 @@ export const updateTestResult = async (id: string, result: any, currentUser?: an
     .eq('id', id)
     .single();
 
-  // Re-encoding a result that was returned by QC (or never submitted) sends it
-  // back to the senior MedTech for verification automatically.
-  if (
-    result.result_value !== undefined &&
-    !result.status &&
-    oldData && ['pending', 'encoding'].includes(oldData.status)
-  ) {
-    result = { ...result, status: 'for_verification' };
+  const isContentEdit = result.result_value !== undefined && !result.status;
+
+  if (isContentEdit && oldData) {
+    // Released results are locked; they must be amended first.
+    if (oldData.status === 'released') {
+      throw new Error('This result is already released and locked. A Senior MedTech must use "Amend" first.');
+    }
+    // An edit can't move a result to another patient or section.
+    const { patient_name, patient_id, test_request_id, section, ...rest } = result;
+    void patient_name; void patient_id; void test_request_id; void section;
+    result = rest;
+    // Any change to the values goes (back) to a Senior MedTech for verification.
+    if (['pending', 'encoding', 'approved'].includes(oldData.status)) {
+      result = { ...result, status: 'for_verification' };
+    }
+    if (opts.note?.trim()) result = { ...result, correction_note: opts.note.trim() };
   }
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('test_results')
     .update(result)
     .eq('id', id)
     .select();
-  
+
+  // Before migration 008 the correction_note column doesn't exist yet.
+  if (error && /correction_note/.test(error.message)) {
+    const { correction_note, ...withoutNote } = result;
+    void correction_note;
+    ({ data, error } = await supabase.from('test_results').update(withoutNote).eq('id', id).select());
+  }
+
   if (error) {
     console.error('Error updating test result:', error);
-    return null;
+    throw new Error(error.message);
+  }
+
+  if (isContentEdit && data?.[0]) {
+    await logActivity({
+      user_id: currentUser?.id,
+      user_name: currentUser?.full_name || 'Unknown User',
+      encryption_key: currentUser?.encryption_key || '',
+      action: 'edit',
+      resource: `${data[0].test_name} - ${data[0].patient_name}`,
+      resource_type: 'Test Result',
+      description:
+        `Edited ${data[0].test_name} result (was ${oldData?.status?.toUpperCase()})` +
+        (oldData?.status === 'approved' ? ' — sent back for re-verification' : '') +
+        (opts.note?.trim() ? `. Correction: ${opts.note.trim()}` : ''),
+    });
   }
 
   if (data?.[0]?.test_request_id && result.status) {
@@ -786,7 +829,13 @@ export const updateTestResult = async (id: string, result: any, currentUser?: an
   return data?.[0] || null;
 };
 
-export const deleteTestResult = async (id: string) => {
+/**
+ * Deletes a result that hasn't been verified yet. Approved and released results
+ * are part of the official record and can't be deleted. Removes the result's QC
+ * checks, re-syncs its test request, and records the deletion in the audit log.
+ * Throws an Error with a readable message when the delete isn't allowed.
+ */
+export const deleteTestResult = async (id: string, currentUser?: any) => {
   if (USE_MOCK_DATA) {
     const index = MOCK_TEST_RESULTS.findIndex(r => r.id === id);
     if (index !== -1) {
@@ -796,16 +845,58 @@ export const deleteTestResult = async (id: string) => {
     return false;
   }
 
-  const { error } = await supabase
-    .from('test_results')
-    .delete()
-    .eq('id', id);
-  
+  const { data: row } = await supabase.from('test_results').select('*').eq('id', id).maybeSingle();
+  if (!row) throw new Error('Result not found.');
+  if (row.status === 'approved' || row.status === 'released') {
+    throw new Error(`This result is already ${row.status} and can't be deleted.`);
+  }
+
+  await supabase.from('quality_checks').delete().eq('test_result_id', id);
+  const { error } = await supabase.from('test_results').delete().eq('id', id);
   if (error) {
     console.error('Error deleting test result:', error);
-    return false;
+    throw new Error(error.message);
   }
+
+  await syncTestRequestStatus(row.test_request_id);
+  await logActivity({
+    user_id: currentUser?.id,
+    user_name: currentUser?.full_name || 'Unknown User',
+    encryption_key: currentUser?.encryption_key || '',
+    action: 'delete',
+    resource: `${row.test_name} - ${row.patient_name}`,
+    resource_type: 'Test Result',
+    description: `Deleted ${row.test_name} result (${row.status}) for ${row.patient_name}`,
+  });
   return true;
+};
+
+/**
+ * Re-opens a RELEASED result so it can be corrected (Senior MedTech only; also
+ * enforced in the database). It goes back to for_verification, disappears from
+ * the doctor portal until re-released, and the reason is kept in the audit log.
+ */
+export const amendTestResult = async (id: string, reason: string, currentUser?: any) => {
+  if (!reason.trim()) throw new Error('A reason for the amendment is required.');
+  const { data, error } = await supabase
+    .from('test_results')
+    .update({ status: 'for_verification', updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'released')
+    .select();
+  if (error) throw new Error(error.message);
+  if (!data?.[0]) throw new Error('Only released results can be amended.');
+  await syncTestRequestStatus(data[0].test_request_id);
+  await logActivity({
+    user_id: currentUser?.id,
+    user_name: currentUser?.full_name || 'Unknown User',
+    encryption_key: currentUser?.encryption_key || '',
+    action: 'edit',
+    resource: `${data[0].test_name} - ${data[0].patient_name}`,
+    resource_type: 'Test Result',
+    description: `AMENDED released ${data[0].test_name} result for ${data[0].patient_name}. Reason: ${reason.trim()}`,
+  });
+  return data[0];
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
