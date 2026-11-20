@@ -23,6 +23,7 @@ import {
   UserCog,
   KeyRound,
   Tag,
+  Wallet,
 } from 'lucide-react';
 import { isSeniorMedtech, roleLabel } from '@/lib/roles';
 import { supabase } from '@/lib/supabaseClient';
@@ -106,6 +107,7 @@ export default function Sidebar({ isOpen, setIsOpen, variant = 'staff' }: Sideba
 
   const adminMenuItems = [
     { label: 'Overview',        path: '/admin',            icon: LayoutDashboard, seniorOnly: false },
+    { label: 'Revenue',         path: '/admin/revenue',    icon: Wallet,          seniorOnly: false },
     { label: 'Doctors',         path: '/admin/doctors',    icon: Stethoscope,     seniorOnly: false },
     { label: 'Test Prices',     path: '/admin/prices',     icon: Tag,             seniorOnly: false },
     { label: 'Users',           path: '/admin/users',      icon: UserCog,         seniorOnly: false },

@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Loader, Stethoscope, Users, ClipboardList, MapPin, History, ArrowRight } from 'lucide-react';
+import { Loader, Stethoscope, Users, ClipboardList, MapPin, History, ArrowRight, Wallet } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
-import { fetchUsers, fetchAuditLogs } from '@/lib/database';
+import { fetchUsers, fetchAuditLogs, fetchBilling } from '@/lib/database';
+import { toPHDate } from '@/lib/dates';
 import { fetchDoctors, areaLabel, Doctor } from '@/lib/doctors';
 import { roleLabel } from '@/lib/roles';
 
@@ -24,10 +25,12 @@ export default function AdminOverviewPage() {
   const [users, setUsers] = useState<any[]>([]);
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
+  const [bills, setBills] = useState<any[]>([]);
 
   useEffect(() => {
     (async () => {
-      const [docs, usr, lg] = await Promise.all([fetchDoctors(), fetchUsers(), fetchAuditLogs()]);
+      const [docs, usr, lg, bl] = await Promise.all([fetchDoctors(), fetchUsers(), fetchAuditLogs(), fetchBilling()]);
+      setBills(bl || []);
       let reqs: RequestRow[] = [];
       if (!USE_MOCK_DATA) {
         const { data } = await supabase
@@ -75,6 +78,19 @@ export default function AdminOverviewPage() {
 
   const unlinkedRequests = requests.filter(r => !r.doctor_id).length;
 
+  // Revenue collected this month (PH time), counted on the day it was paid — same rule as Admin → Revenue
+  const month = toPHDate().slice(0, 7);
+  const paidDay = (b: any) => {
+    const ts = b.date_paid as string | null;
+    if (!ts) return b.date_created as string;
+    const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(ts) ? ts : ts.replace(' ', 'T') + 'Z');
+    return isNaN(d.getTime()) ? (b.date_created as string) : toPHDate(d);
+  };
+  const revenueThisMonth = bills
+    .filter(b => b.status === 'paid' && (paidDay(b) || '').startsWith(month))
+    .reduce((s, b) => s + (Number(b.amount) || 0), 0);
+  const unpaidCount = bills.filter(b => b.status !== 'paid').length;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -100,10 +116,19 @@ export default function AdminOverviewPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-bold text-gray-800">Admin Overview</h1>
-        <p className="text-gray-600 text-sm mt-1">Doctors, users, and request activity across the laboratory.</p>
+        <p className="text-gray-600 text-sm mt-1">Revenue, doctors, users, and request activity across the laboratory.</p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+        <Link href="/admin/revenue" className="block hover:opacity-90 transition">
+          {stat(
+            'Revenue This Month',
+            `₱${revenueThisMonth.toLocaleString('en-PH', { maximumFractionDigits: 0 })}`,
+            Wallet,
+            'border-emerald-600',
+            `${unpaidCount} unpaid bill(s) · View →`,
+          )}
+        </Link>
         {stat('Active Doctors', activeDoctors.length, Stethoscope, 'border-[#3B6255]', `${doctors.length - activeDoctors.length} inactive`)}
         {stat('Areas Covered', doctorsByArea.length, MapPin, 'border-green-600')}
         {stat('System Users', users.length, Users, 'border-blue-600')}
