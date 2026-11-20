@@ -194,7 +194,7 @@ export default function UserManagementPage() {
           <p className="text-3xl font-bold text-[#3B6255]">{users.length}</p>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-green-600">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Member Users</h3>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">MedTechs</h3>
           <p className="text-3xl font-bold text-green-600">{memberCount}</p>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-blue-600">
@@ -259,7 +259,7 @@ export default function UserManagementPage() {
                     errors.role ? 'border-red-500' : 'border-gray-300'
                   }`}
                 >
-                  <option value="member">Member</option>
+                  <option value="member">MedTech</option>
                   <option value="senior_medtech">Senior MedTech</option>
                   <option value="admin">Administrator</option>
                   {formData.role === 'doctor' && <option value="doctor">Doctor (manage in Doctors page)</option>}
