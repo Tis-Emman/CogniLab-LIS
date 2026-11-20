@@ -4,12 +4,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useReactToPrint } from 'react-to-print';
 import {
   Loader, ClipboardList, Clock, FlaskConical, CheckCircle, MapPin, Building2, Search,
-  ChevronDown, ChevronUp, AlertTriangle, Stethoscope, Printer, Bell,
+  ChevronDown, ChevronUp, AlertTriangle, Stethoscope, Printer, Bell, Eye, X,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/lib/authContext';
 import { logActivity, getAbnormalStatus } from '@/lib/database';
 import { Doctor, fetchDoctorByUser, areaLabel } from '@/lib/doctors';
+import {
+  LabReportDocument, ReportData, Signatory, formatReportDate, formatReportDateTime,
+} from '@/components/LabReport';
 
 interface RequestedTest { section: string; test_name: string }
 
@@ -38,8 +41,17 @@ interface TestResult {
   date_created: string;
   created_at?: string;
   updated_at?: string;
+  received_at?: string | null;
   patient_id?: string | null;
   test_request_id?: string | null;
+}
+
+/** Report preview open in the modal */
+interface Preview {
+  request: TestRequest;
+  report: ReportData;
+  encoder: Signatory | null;
+  qualityChecker: Signatory | null;
 }
 
 const STATUS: Record<TestRequest['status'], { label: string; cls: string }> = {
@@ -65,6 +77,12 @@ export default function DoctorDashboardPage() {
   const [newIds, setNewIds] = useState<Set<string>>(new Set());
   const printRef = useRef<HTMLDivElement>(null);
   const handlePrint = useReactToPrint({ contentRef: printRef, documentTitle: 'CogniLab Released Results' });
+  // Patient records (age, sex, birthdate, address) for the report preview, by patients.id
+  const [patients, setPatients] = useState<Record<string, any>>({});
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const printPreview = useReactToPrint({ contentRef: previewRef, documentTitle: 'CogniLab Laboratory Report' });
 
   useEffect(() => {
     if (!user) return;
@@ -87,7 +105,8 @@ export default function DoctorDashboardPage() {
 
       // Only released results for this doctor's requests: linked by request id,
       // plus older unlinked results matched by patient name.
-      const cols = 'id, patient_name, section, test_name, result_value, reference_range, unit, status, date_created, created_at, updated_at, patient_id, test_request_id';
+      // select('*') so a column an older database doesn't have yet can't break the query
+      const cols = '*';
       const reqIds = reqs.map(r => r.id);
       const names = [...new Set(reqs.map(r => r.patient_name))];
       let released: TestResult[] = [];
@@ -107,6 +126,13 @@ export default function DoctorDashboardPage() {
         released = [...m.values()];
       }
       setResults(released);
+
+      // The doctor may read the patients on their own requests (RLS, migration 005)
+      const patientIds = [...new Set(reqs.map(r => r.patient_id).filter(Boolean))];
+      if (patientIds.length) {
+        const { data: pts } = await supabase.from('patients').select('*').in('id', patientIds);
+        setPatients(Object.fromEntries((pts || []).map((p: any) => [p.id, p])));
+      }
 
       // "New since last visit" — remembered per doctor on this device
       const seenKey = `cognilab_doctor_seen_${doc.id}`;
@@ -140,6 +166,75 @@ export default function DoctorDashboardPage() {
           // match a requested test, or a component of a panel (e.g. CBC → Hemoglobin) in the same section
           (wanted.has(x.test_name.toLowerCase()) || (r.requested_tests || []).some(t => t.section === x.section)),
     );
+  };
+
+  // Builds the same laboratory report the MedTech prints in Report Generation
+  const openPreview = async (r: TestRequest, res: TestResult[]) => {
+    if (!user || !doctor) return;
+    setPreviewLoading(r.id);
+    const p = patients[r.patient_id];
+    const byTime = (x: TestResult) => new Date(x.created_at || x.date_created).getTime();
+    const earliest = [...res].sort((a, b) => byTime(a) - byTime(b))[0];
+    const lastRelease = res
+      .map(x => new Date(x.updated_at || x.created_at || x.date_created).getTime())
+      .reduce((a, b) => Math.max(a, b), 0);
+
+    const dateRequested = formatReportDateTime(new Date(r.created_at));
+    const report: ReportData = {
+      patientId: p?.patient_id_no || 'N/A',
+      patientName: p
+        ? `${p.last_name.toUpperCase()}, ${p.first_name.toUpperCase()}${p.middle_name ? ' ' + p.middle_name.toUpperCase() : ''}`
+        : r.patient_name.toUpperCase(),
+      age: p?.age ?? '',
+      sex: (p?.sex || '').toUpperCase(),
+      birthdate: p?.birthdate
+        ? new Date(p.birthdate).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+        : 'N/A',
+      municipality: p?.municipality || '',
+      province: p?.province || '',
+      address: p
+        ? [p.address_house_no, p.address_street, p.address_barangay, p.municipality, p.province].filter(Boolean).join(', ')
+        : '',
+      physician: r.requesting_physician?.trim() || doctor.full_name,
+      dateRequested,
+      dateReceived: earliest?.received_at
+        ? formatReportDateTime(new Date(earliest.received_at))
+        : earliest?.created_at ? formatReportDateTime(new Date(earliest.created_at)) : dateRequested,
+      tests: res.map(x => ({
+        section: x.section || 'GENERAL',
+        name: x.test_name,
+        result: x.result_value,
+        referenceRange: x.reference_range,
+        unit: x.unit,
+      })),
+      billingStatus: 'paid', // only paid results can be released
+      dateReleased: formatReportDate(lastRelease ? new Date(lastRelease) : new Date()),
+    };
+
+    // The two MedTechs who signed it (migration 014). Without that migration the
+    // signature lines show "Signature pending" instead.
+    const blank = (id: string): Signatory => ({ id, displayName: '', license: '', signatureFile: '' });
+    let encoder: Signatory | null = blank('encoder');
+    let qualityChecker: Signatory | null = blank('qc');
+    const { data: signers, error } = await supabase.rpc('doctor_report_signatories', { result_ids: res.map(x => x.id) });
+    if (error) console.warn('[doctor report] signatories unavailable:', error.message);
+    for (const sg of (signers as any[]) || []) {
+      const sig: Signatory = { id: sg.kind, displayName: sg.display_name || '', license: sg.license_no || '', signatureFile: sg.signature_file || '' };
+      if (sg.kind === 'encoder') encoder = sig;
+      if (sg.kind === 'qc') qualityChecker = sig;
+    }
+
+    setPreview({ request: r, report, encoder, qualityChecker });
+    setPreviewLoading(null);
+    await logActivity({
+      user_id: user.id,
+      user_name: user.full_name,
+      encryption_key: user.encryption_key,
+      action: 'view',
+      resource: 'Doctor Portal',
+      resource_type: 'Lab Report Preview',
+      description: `${user.full_name} previewed the lab report of ${r.patient_name} (${res.length} result(s))`,
+    });
   };
 
   const counts = useMemo(() => {
@@ -282,12 +377,23 @@ export default function DoctorDashboardPage() {
                       <div className="flex items-center justify-between mb-2">
                         <p className="font-semibold text-gray-700 text-sm">Released results</p>
                         {res.length > 0 && (
-                          <button
-                            onClick={() => handlePrint()}
-                            className="text-sm font-semibold text-[#3B6255] hover:underline flex items-center gap-1"
-                          >
-                            <Printer className="w-4 h-4" /> Print / Save as PDF
-                          </button>
+                          <div className="flex items-center gap-4">
+                            <button
+                              onClick={() => openPreview(r, res)}
+                              disabled={previewLoading === r.id}
+                              className="text-sm font-semibold text-white bg-[#3B6255] hover:bg-green-900 px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50"
+                            >
+                              {previewLoading === r.id
+                                ? <><Loader className="w-4 h-4 animate-spin" /> Loading…</>
+                                : <><Eye className="w-4 h-4" /> Preview Report</>}
+                            </button>
+                            <button
+                              onClick={() => handlePrint()}
+                              className="text-sm font-semibold text-[#3B6255] hover:underline flex items-center gap-1"
+                            >
+                              <Printer className="w-4 h-4" /> Print / Save as PDF
+                            </button>
+                          </div>
                         )}
                       </div>
                       {res.length === 0 ? (
@@ -339,6 +445,42 @@ export default function DoctorDashboardPage() {
           </ul>
         )}
       </div>
+
+      {/* ── Lab Report Preview (same layout as the MedTech's Report Generation) ── */}
+      {preview && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center overflow-y-auto p-4" onClick={() => setPreview(null)}>
+          <div className="bg-gray-100 rounded-xl shadow-2xl w-full max-w-4xl my-8" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-4 px-6 py-4 bg-white rounded-t-xl border-b border-gray-200">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Lab Report Preview</h2>
+                <p className="text-xs text-gray-500">{preview.request.patient_name} · {preview.report.tests.length} released result(s)</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => printPreview()}
+                  className="text-sm font-semibold text-white bg-[#3B6255] hover:bg-green-900 px-4 py-2 rounded-lg flex items-center gap-2"
+                >
+                  <Printer className="w-4 h-4" /> Print / Save as PDF
+                </button>
+                <button onClick={() => setPreview(null)} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500" aria-label="Close preview">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 md:p-6">
+              <LabReportDocument
+                ref={previewRef}
+                report={preview.report}
+                encoder={preview.encoder}
+                qualityChecker={preview.qualityChecker}
+              />
+              <p className="text-xs text-gray-500 italic mt-3 text-center">
+                Released results only. The official signed report is issued by the laboratory.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
