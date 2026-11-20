@@ -5,8 +5,9 @@
 -- Doctors can't read the users or quality_checks tables (RLS, migration 005),
 -- but the report preview needs the two MedTechs who signed it. This function
 -- returns ONLY the signatory details (printed name, license no., signature file)
--- and ONLY for RELEASED results that belong to the signed-in, active doctor.
--- Anyone else gets no rows.
+-- and ONLY for RELEASED results that belong to the signed-in, active doctor,
+-- and whose test request is COMPLETED (every requested test released, i.e. the
+-- MedTech process is finished). Anyone else gets no rows.
 --
 --   kind = 'encoder' : who encoded the results (test_results.created_by,
 --                      falling back to the test request's created_by)
@@ -22,6 +23,9 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
     WHERE r.id = ANY (result_ids)
       AND r.status = 'released'
       AND public.my_doctor_id() IS NOT NULL
+      -- the whole request must be finished (older results without a request link: released is enough)
+      AND (r.test_request_id IS NULL
+           OR EXISTS (SELECT 1 FROM test_requests q WHERE q.id = r.test_request_id AND q.status = 'completed'))
       AND (   r.test_request_id IN (SELECT public.doctor_request_ids())
            OR r.patient_id      IN (SELECT public.doctor_patient_ids())
            OR (r.patient_id IS NULL AND r.patient_name IN (SELECT public.doctor_patient_names())))

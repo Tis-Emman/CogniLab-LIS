@@ -170,7 +170,7 @@ export default function DoctorDashboardPage() {
 
   // Builds the same laboratory report the MedTech prints in Report Generation
   const openPreview = async (r: TestRequest, res: TestResult[]) => {
-    if (!user || !doctor) return;
+    if (!user || !doctor || r.status !== 'completed') return;
     setPreviewLoading(r.id);
     const p = patients[r.patient_id];
     const byTime = (x: TestResult) => new Date(x.created_at || x.date_created).getTime();
@@ -378,15 +378,26 @@ export default function DoctorDashboardPage() {
                         <p className="font-semibold text-gray-700 text-sm">Released results</p>
                         {res.length > 0 && (
                           <div className="flex items-center gap-4">
-                            <button
-                              onClick={() => openPreview(r, res)}
-                              disabled={previewLoading === r.id}
-                              className="text-sm font-semibold text-white bg-[#3B6255] hover:bg-green-900 px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50"
-                            >
-                              {previewLoading === r.id
-                                ? <><Loader className="w-4 h-4 animate-spin" /> Loading…</>
-                                : <><Eye className="w-4 h-4" /> Preview Report</>}
-                            </button>
+                            {/* The report preview opens only after the MedTechs finish the WHOLE request
+                                (every requested test released → request Completed). */}
+                            {r.status === 'completed' ? (
+                              <button
+                                onClick={() => openPreview(r, res)}
+                                disabled={previewLoading === r.id}
+                                className="text-sm font-semibold text-white bg-[#3B6255] hover:bg-green-900 px-3 py-1.5 rounded-lg flex items-center gap-1 disabled:opacity-50"
+                              >
+                                {previewLoading === r.id
+                                  ? <><Loader className="w-4 h-4 animate-spin" /> Loading…</>
+                                  : <><Eye className="w-4 h-4" /> Preview Report</>}
+                              </button>
+                            ) : (
+                              <span
+                                title="The lab report preview opens once every requested test has been released."
+                                className="text-xs font-semibold text-gray-500 bg-gray-100 px-3 py-1.5 rounded-lg flex items-center gap-1 cursor-not-allowed"
+                              >
+                                <Clock className="w-4 h-4" /> Report available when all tests are released
+                              </span>
+                            )}
                             <button
                               onClick={() => handlePrint()}
                               className="text-sm font-semibold text-[#3B6255] hover:underline flex items-center gap-1"
