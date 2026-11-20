@@ -7,7 +7,7 @@ import { roleLabel } from '@/lib/roles';
 import { createStaffAccount, deleteStaffAccount } from '@/lib/adminApi';
 import { useAuth } from '@/lib/authContext';
 
-type Role = 'member' | 'faculty' | 'senior_medtech' | 'admin' | 'doctor';
+type Role = 'member' | 'senior_medtech' | 'admin' | 'doctor';
 
 interface User {
   id: string;
@@ -68,21 +68,6 @@ export default function UserManagementPage() {
     if (editingId && editingId === me?.id) {
       const original = users.find((u) => u.id === editingId);
       if (original && original.role !== formData.role) newErrors.role = "You can't change your own role";
-    }
-
-    // Check user limits (only when adding; editing an existing user must always work)
-    if (editingId) {
-      setErrors(newErrors);
-      return Object.keys(newErrors).length === 0;
-    }
-    const memberCount = users.filter((u) => u.role === 'member' && u.id !== editingId).length;
-    const facultyCount = users.filter((u) => u.role === 'faculty' && u.id !== editingId).length;
-
-    if (formData.role === 'member' && memberCount >= 8) {
-      newErrors.role = 'Maximum 8 member users allowed';
-    }
-    if (formData.role === 'faculty' && facultyCount >= 1) {
-      newErrors.role = 'Maximum 1 faculty user allowed';
     }
 
     setErrors(newErrors);
@@ -161,7 +146,7 @@ export default function UserManagementPage() {
   };
 
   const memberCount = users.filter((u) => u.role === 'member').length;
-  const facultyCount = users.filter((u) => u.role === 'faculty').length;
+  const seniorCount = users.filter((u) => u.role === 'senior_medtech').length;
 
   if (loading) {
     return (
@@ -189,7 +174,7 @@ export default function UserManagementPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">User Management</h1>
-          <p className="text-gray-600 text-sm mt-1">Manage system users and access permissions (9 total: 8 members + 1 faculty)</p>
+          <p className="text-gray-600 text-sm mt-1">Manage system users and access permissions</p>
         </div>
         <button
           onClick={() => {
@@ -213,8 +198,8 @@ export default function UserManagementPage() {
           <p className="text-3xl font-bold text-green-600">{memberCount}</p>
         </div>
         <div className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-blue-600">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Faculty Users</h3>
-          <p className="text-3xl font-bold text-blue-600">{facultyCount}</p>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2">Senior MedTechs</h3>
+          <p className="text-3xl font-bold text-blue-600">{seniorCount}</p>
         </div>
       </div>
 
@@ -274,8 +259,7 @@ export default function UserManagementPage() {
                     errors.role ? 'border-red-500' : 'border-gray-300'
                   }`}
                 >
-                  <option value="member">Member (Max 8)</option>
-                  <option value="faculty">Faculty (Max 1)</option>
+                  <option value="member">Member</option>
                   <option value="senior_medtech">Senior MedTech</option>
                   <option value="admin">Administrator</option>
                   {formData.role === 'doctor' && <option value="doctor">Doctor (manage in Doctors page)</option>}
@@ -321,7 +305,7 @@ export default function UserManagementPage() {
               )}
             </div>
 
-            {editingId && ['member', 'senior_medtech', 'faculty'].includes(formData.role) && (
+            {editingId && ['member', 'senior_medtech'].includes(formData.role) && (
               <div className="border-t border-gray-200 pt-6">
                 <h3 className="font-semibold text-gray-800 mb-1">Report Signatory</h3>
                 <p className="text-xs text-gray-500 mb-4">Printed on laboratory reports when this MedTech encodes or quality-checks results.</p>
@@ -397,7 +381,7 @@ export default function UserManagementPage() {
                   <td className="py-4 px-8">
                     <span
                       className={`px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1 w-fit ${
-                        user.role === 'faculty'
+                        user.role === 'senior_medtech'
                           ? 'bg-blue-100 text-blue-800'
                           : user.role === 'admin'
                           ? 'bg-purple-100 text-purple-800'

@@ -23,7 +23,7 @@ When `NEXT_PUBLIC_USE_MOCK_DATA=true` is set:
 **Login User:**
 - Email: maria.santos@lis.com
 - Name: Dr. Maria Santos
-- Role: Faculty
+- Role: Senior MedTech
 - Department: Clinical Chemistry
 
 ## Mock Data Included

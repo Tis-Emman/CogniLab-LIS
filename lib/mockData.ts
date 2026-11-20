@@ -2,14 +2,14 @@
 // Set NEXT_PUBLIC_USE_MOCK_DATA=true in .env.local to enable
 
 export const MOCK_USERS = [
-  // Faculty - System Admin
+  // Senior MedTech
   {
     id: 'user-009',
     full_name: 'BSMT 2',
     email: 'bsmtCogniLab2026@gmail.com',
     username: 'BSMT 2',
     password: 'BSMT2026LIS',
-    role: 'faculty',
+    role: 'senior_medtech',
     department: 'Laboratory Management',
     status: 'active',
     encryption_key: 'ENC_KEY_ADMIN',
@@ -431,7 +431,7 @@ export const MOCK_AUTH_USER = {
   id: 'user-001',
   email: 'maria.santos@lis.com',
   full_name: 'Dr. Maria Santos',
-  role: 'faculty',
+  role: 'senior_medtech',
   department: 'Clinical Chemistry',
   encryption_key: 'ENC_KEY_001',
 };

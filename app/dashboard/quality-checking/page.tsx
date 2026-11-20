@@ -517,8 +517,8 @@ function LISWorkflowStepper({ currentStep }: { currentStep: number }) {
 const isSeniorOrAbove = (user: any): boolean => {
   if (!user) return false;
   const role = user.role?.toLowerCase();
-  // Senior MedTechs and faculty only. Admins don't perform lab work (separation of duties).
-  if (['faculty', 'senior_medtech', 'senior', 'pathologist'].includes(role)) return true;
+  // Senior MedTechs only. Admins don't perform lab work (separation of duties).
+  if (['senior_medtech', 'senior', 'pathologist'].includes(role)) return true;
   // Fallback: check a dedicated is_senior flag if present
   if (user.is_senior === true) return true;
   return false;

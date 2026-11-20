@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { findAuthUserByEmail, requireAdmin } from '@/lib/serverAdmin';
 import { ilikeLiteral } from '@/lib/roles';
 
-const STAFF_ROLES = ['member', 'senior_medtech', 'faculty', 'admin'];
+const STAFF_ROLES = ['member', 'senior_medtech', 'admin'];
 
 /**
  * POST /api/admin/users — create a staff member WITH a login.

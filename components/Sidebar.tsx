@@ -117,7 +117,7 @@ export default function Sidebar({ isOpen, setIsOpen, variant = 'staff' }: Sideba
     { label: 'Change Password', path: '/doctor/password',  icon: KeyRound,        seniorOnly: false },
   ];
 
-  // Quality Checking is for senior MedTechs/faculty only (separation of duties)
+  // Quality Checking is for senior MedTechs only (separation of duties)
   const canAccessQC = isSeniorMedtech(user);
   const staffItems = allMenuItems.filter(item => !item.seniorOnly || canAccessQC);
   const menuItems =

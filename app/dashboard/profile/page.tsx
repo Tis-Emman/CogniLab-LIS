@@ -33,21 +33,13 @@ export default function ProfilePage() {
     fullName: u?.full_name || 'Unknown User',
     email: u?.email || '',
     phone: dbData?.phone || '',
-    role: u?.role === 'faculty'
-      ? 'Laboratory Director'
-      : u?.role === 'senior_medtech'
-        ? 'Senior Medical Technologist'
-        : 'Junior Medical Technologist',
+    role: u?.role === 'senior_medtech'
+      ? 'Senior Medical Technologist'
+      : 'Junior Medical Technologist',
     department: u?.department || 'General',
-    avatar: u?.role === 'faculty' ? '👨‍⚕️' : '👤',
-    credentials: u?.role === 'faculty'
-      ? ['RMT']
-      : u?.role === 'senior_medtech'
-        ? ['RMT', 'MLS(ASCP)']
-        : ['RMT'],
-    certifications: u?.role === 'faculty'
-      ? ['Clinical Pathology Specialist', 'ISO 15189 Quality Manager']
-      : [],
+    avatar: '👤',
+    credentials: u?.role === 'senior_medtech' ? ['RMT', 'MLS(ASCP)'] : ['RMT'],
+    certifications: [],
     joinDate: (u as any)?.join_date || toPHDate(),
     address: dbData?.address || '',
     city: dbData?.city || '',
